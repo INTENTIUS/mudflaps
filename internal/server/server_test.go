@@ -241,6 +241,52 @@ func TestUpdateReturnsNewInstanceIDSynchronously(t *testing.T) {
 	}
 }
 
+// TestAcquireLeaseConflictReturnsHeldLease asserts that a second acquire on a
+// held lease returns a MachineLease envelope (status/code/message + holder), not
+// a plain error — and that the holder's nonce is never leaked.
+func TestAcquireLeaseConflictReturnsHeldLease(t *testing.T) {
+	h := newHarness(t)
+	m := h.createStartedMachine("demo")
+
+	// First acquire succeeds and yields a nonce.
+	code, body := h.do(http.MethodPost, "/v1/apps/demo/machines/"+m.ID+"/lease",
+		flaps.AcquireLeaseRequest{TTL: 30}, nil)
+	if code != http.StatusOK {
+		t.Fatalf("first acquire = %d %s", code, body)
+	}
+	var held flaps.MachineLease
+	h.mustJSON(body, &held)
+	if held.Data == nil || held.Data.Nonce == "" {
+		t.Fatalf("first acquire missing nonce: %s", body)
+	}
+	heldNonce := held.Data.Nonce
+
+	// Second acquire (no nonce) conflicts and returns the envelope.
+	code, body = h.do(http.MethodPost, "/v1/apps/demo/machines/"+m.ID+"/lease",
+		flaps.AcquireLeaseRequest{}, nil)
+	if code != http.StatusConflict {
+		t.Fatalf("second acquire = %d %s, want 409", code, body)
+	}
+	var conflict flaps.MachineLease
+	h.mustJSON(body, &conflict)
+	if conflict.Status != "error" || conflict.Code != "lease_currently_held" {
+		t.Fatalf("conflict envelope = %+v, want status=error code=lease_currently_held", conflict)
+	}
+	if conflict.Message == "" {
+		t.Fatalf("conflict envelope missing message: %s", body)
+	}
+	if conflict.Data == nil || conflict.Data.Owner == "" || conflict.Data.ExpiresAt == 0 {
+		t.Fatalf("conflict envelope missing holder data: %s", body)
+	}
+	// The holder's nonce must never appear in a conflict body.
+	if conflict.Data.Nonce != "" {
+		t.Fatalf("conflict body leaked the holder nonce %q", conflict.Data.Nonce)
+	}
+	if conflict.Data.Nonce == heldNonce && heldNonce != "" {
+		t.Fatalf("conflict body exposed the real nonce")
+	}
+}
+
 func TestDestroyAndWaitDestroyed(t *testing.T) {
 	h := newHarness(t)
 	m := h.createStartedMachine("demo")

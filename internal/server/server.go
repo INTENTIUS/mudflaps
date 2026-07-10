@@ -418,7 +418,19 @@ func (s *Server) acquireLease(w http.ResponseWriter, r *http.Request) {
 
 	l, err := s.leases.Acquire(key, "mudflaps", req.Description, ttl)
 	if errors.Is(err, lease.ErrConflict) {
-		s.writeError(w, http.StatusConflict, "machine lease currently held")
+		// l is the lease currently held by someone else. Flaps reports the
+		// conflict as a MachineLease envelope (status/code/message) so a client
+		// can see the holder and expiry — but never the nonce, which is the
+		// holder's secret.
+		writeJSON(w, http.StatusConflict, flaps.MachineLease{
+			Status:  "error",
+			Code:    "lease_currently_held",
+			Message: "machine lease currently held",
+			Data: &flaps.MachineLeaseData{
+				Owner:     l.Owner,
+				ExpiresAt: l.ExpiresAt.Unix(),
+			},
+		})
 		return
 	}
 	writeJSON(w, http.StatusOK, leaseEnvelope(l))
