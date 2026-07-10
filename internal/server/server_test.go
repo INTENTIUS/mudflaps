@@ -205,6 +205,42 @@ func TestUpdateChurnsInstanceIDOverHTTP(t *testing.T) {
 	}
 }
 
+// TestUpdateReturnsNewInstanceIDSynchronously asserts the fidelity guarantee:
+// the update response itself carries the new version (instance_id + replaced
+// prior version), and a wait keyed to that new instance_id succeeds once it
+// boots — the client never has to discover the new id by polling.
+func TestUpdateReturnsNewInstanceIDSynchronously(t *testing.T) {
+	h := newHarness(t)
+	m := h.createStartedMachine("demo")
+
+	code, body := h.do(http.MethodPost, "/v1/apps/demo/machines/"+m.ID,
+		flaps.CreateMachineRequest{Config: &flaps.MachineConfig{Image: "nginx:2"}}, nil)
+	if code != http.StatusOK {
+		t.Fatalf("update = %d %s", code, body)
+	}
+	var resp flaps.Machine
+	h.mustJSON(body, &resp)
+
+	// The new instance_id and replacing state are in the RESPONSE, before any
+	// async boot. (Version history is internal — flaps doesn't expose it on the
+	// machine object — so it's asserted at the store level in the machine tests.)
+	if resp.InstanceID == m.InstanceID {
+		t.Fatalf("update response instance_id did not churn from %q", m.InstanceID)
+	}
+	if resp.State != flaps.StateReplacing {
+		t.Fatalf("update response state = %q, want replacing", resp.State)
+	}
+
+	// The new version boots and a wait keyed to the new instance_id succeeds —
+	// the client never had to poll to learn the new id.
+	h.clk.Advance(time.Hour)
+	code, body = h.do(http.MethodGet,
+		"/v1/apps/demo/machines/"+m.ID+"/wait?state=started&instance_id="+resp.InstanceID+"&timeout=5", nil, nil)
+	if code != http.StatusOK {
+		t.Fatalf("wait new instance = %d %s", code, body)
+	}
+}
+
 func TestDestroyAndWaitDestroyed(t *testing.T) {
 	h := newHarness(t)
 	m := h.createStartedMachine("demo")

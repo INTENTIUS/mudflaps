@@ -11,7 +11,6 @@ import (
 
 	"github.com/intentius/mudflaps/internal/clock"
 	"github.com/intentius/mudflaps/internal/flaps"
-	"github.com/intentius/mudflaps/internal/id"
 	"github.com/intentius/mudflaps/internal/store"
 )
 
@@ -95,25 +94,13 @@ func (a *Advancer) Destroy(app, machineID string) {
 	})
 }
 
-// Update models version churn. The machine is already in the replacing state;
-// after the delay it mints a fresh instance_id, marks the previous version
-// replaced, and settles in started.
+// Update settles a machine that is being replaced. The server performs the
+// version churn synchronously (minting the new instance_id and marking the prior
+// version replaced) as part of the update response; the advancer only boots the
+// new version replacing -> started.
 func (a *Advancer) Update(app, machineID string) {
 	a.clk.AfterFunc(a.delays.Update, func() {
-		newInstance := id.Instance()
-		_, err := a.store.UpdateMachine(app, machineID, func(m *flaps.Machine) error {
-			markReplaced(m)
-			m.InstanceID = newInstance
-			m.State = flaps.StateStarted
-			m.Versions = append(m.Versions, flaps.MachineVersion{
-				InstanceID: newInstance,
-				State:      flaps.StateStarted,
-			})
-			return nil
-		})
-		if err != nil {
-			a.log.Debug("update advance failed", "app", app, "machine", machineID, "err", err)
-		}
+		a.set(app, machineID, flaps.StateStarted)
 	})
 }
 
@@ -131,12 +118,5 @@ func (a *Advancer) set(app, machineID string, state flaps.MachineState) {
 		// A machine can be deleted out from under a pending transition; that is
 		// expected, not an error worth surfacing.
 		a.log.Debug("state advance skipped", "app", app, "machine", machineID, "state", state, "err", err)
-	}
-}
-
-// markReplaced marks the current (latest) version entry replaced.
-func markReplaced(m *flaps.Machine) {
-	if n := len(m.Versions); n > 0 {
-		m.Versions[n-1].State = flaps.StateReplaced
 	}
 }
