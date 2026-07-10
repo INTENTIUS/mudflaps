@@ -147,8 +147,10 @@ type ListAppsResponse struct {
 
 // MachineLease is the envelope returned by the lease endpoints.
 type MachineLease struct {
-	Status string            `json:"status"`
-	Data   *MachineLeaseData `json:"data,omitempty"`
+	Status  string            `json:"status"`
+	Code    string            `json:"code,omitempty"`
+	Message string            `json:"message,omitempty"`
+	Data    *MachineLeaseData `json:"data,omitempty"`
 }
 
 // MachineLeaseData is the lease itself: an owner holds it via a nonce until it
