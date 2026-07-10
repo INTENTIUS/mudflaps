@@ -1,0 +1,549 @@
+// Package server wires the store, lease manager, and lifecycle advancer behind
+// an net/http router that speaks the flaps wire protocol over the /v1 path
+// space. It uses Go 1.22+ method+pattern routing so it needs no third-party
+// router.
+package server
+
+import (
+	"encoding/json"
+	"errors"
+	"io"
+	"log/slog"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/intentius/mudflaps/internal/clock"
+	"github.com/intentius/mudflaps/internal/flaps"
+	"github.com/intentius/mudflaps/internal/id"
+	"github.com/intentius/mudflaps/internal/lease"
+	"github.com/intentius/mudflaps/internal/machine"
+	"github.com/intentius/mudflaps/internal/store"
+)
+
+// LeaseNonceHeader carries the lease nonce on mutating requests, matching Fly.
+const LeaseNonceHeader = "fly-machine-lease-nonce"
+
+// waitPollInterval is how often a /wait handler re-checks machine state.
+const waitPollInterval = 20 * time.Millisecond
+
+// implementedPaths and unimplementedPaths back the health/coverage endpoint.
+var implementedPaths = []string{
+	"GET /v1/apps",
+	"POST /v1/apps",
+	"GET /v1/apps/{app}",
+	"DELETE /v1/apps/{app}",
+	"POST /v1/apps/{app}/machines",
+	"GET /v1/apps/{app}/machines",
+	"GET /v1/apps/{app}/machines/{id}",
+	"POST /v1/apps/{app}/machines/{id}",
+	"DELETE /v1/apps/{app}/machines/{id}",
+	"POST /v1/apps/{app}/machines/{id}/start",
+	"POST /v1/apps/{app}/machines/{id}/stop",
+	"POST /v1/apps/{app}/machines/{id}/restart",
+	"GET /v1/apps/{app}/machines/{id}/wait",
+	"GET /v1/apps/{app}/machines/{id}/lease",
+	"POST /v1/apps/{app}/machines/{id}/lease",
+	"DELETE /v1/apps/{app}/machines/{id}/lease",
+}
+
+var unimplementedPaths = []string{
+	"/v1/apps/{app}/volumes",
+	"/v1/apps/{app}/machines/{id}/metadata",
+	"/v1/apps/{app}/secrets",
+	"/v1/apps/{app}/certificates",
+	"/v1/apps/{app}/ip_assignments",
+}
+
+// Options configures a Server.
+type Options struct {
+	Version  string
+	Clock    clock.Clock
+	Logger   *slog.Logger
+	Delays   machine.Delays
+	LeaseTTL time.Duration
+}
+
+// Server holds the mudflaps state and serves the API.
+type Server struct {
+	version  string
+	clk      clock.Clock
+	log      *slog.Logger
+	store    *store.Store
+	leases   *lease.Manager
+	advancer *machine.Advancer
+	leaseTTL time.Duration
+	mux      *http.ServeMux
+}
+
+// New constructs a Server, filling in sensible defaults for any zero option.
+func New(opts Options) *Server {
+	if opts.Clock == nil {
+		opts.Clock = clock.Real()
+	}
+	if opts.Logger == nil {
+		opts.Logger = slog.New(slog.DiscardHandler)
+	}
+	if opts.Version == "" {
+		opts.Version = "dev"
+	}
+	if (opts.Delays == machine.Delays{}) {
+		opts.Delays = machine.DefaultDelays()
+	}
+	if opts.LeaseTTL <= 0 {
+		opts.LeaseTTL = lease.DefaultTTL
+	}
+	st := store.New()
+	s := &Server{
+		version:  opts.Version,
+		clk:      opts.Clock,
+		log:      opts.Logger,
+		store:    st,
+		leases:   lease.New(opts.Clock),
+		advancer: machine.NewAdvancer(st, opts.Clock, opts.Delays, opts.Logger),
+		leaseTTL: opts.LeaseTTL,
+	}
+	s.routes()
+	return s
+}
+
+// Handler returns the HTTP handler for the server.
+func (s *Server) Handler() http.Handler { return s.mux }
+
+func (s *Server) routes() {
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("GET /v1/apps", s.listApps)
+	mux.HandleFunc("POST /v1/apps", s.createApp)
+	mux.HandleFunc("GET /v1/apps/{app}", s.getApp)
+	mux.HandleFunc("DELETE /v1/apps/{app}", s.deleteApp)
+
+	mux.HandleFunc("POST /v1/apps/{app}/machines", s.createMachine)
+	mux.HandleFunc("GET /v1/apps/{app}/machines", s.listMachines)
+	mux.HandleFunc("GET /v1/apps/{app}/machines/{id}", s.getMachine)
+	mux.HandleFunc("POST /v1/apps/{app}/machines/{id}", s.updateMachine)
+	mux.HandleFunc("DELETE /v1/apps/{app}/machines/{id}", s.deleteMachine)
+	mux.HandleFunc("POST /v1/apps/{app}/machines/{id}/start", s.startMachine)
+	mux.HandleFunc("POST /v1/apps/{app}/machines/{id}/stop", s.stopMachine)
+	mux.HandleFunc("POST /v1/apps/{app}/machines/{id}/restart", s.restartMachine)
+	mux.HandleFunc("GET /v1/apps/{app}/machines/{id}/wait", s.waitMachine)
+
+	mux.HandleFunc("GET /v1/apps/{app}/machines/{id}/lease", s.getLease)
+	mux.HandleFunc("POST /v1/apps/{app}/machines/{id}/lease", s.acquireLease)
+	mux.HandleFunc("DELETE /v1/apps/{app}/machines/{id}/lease", s.releaseLease)
+
+	mux.HandleFunc("GET /_mudflaps/health", s.health)
+
+	// Endpoints on the roadmap answer honestly with 501 so a client can tell
+	// "not built yet" from "wrong URL".
+	for _, p := range unimplementedPaths {
+		mux.HandleFunc(p, s.notImplemented)
+	}
+
+	s.mux = mux
+}
+
+// ---- apps ----
+
+func (s *Server) listApps(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, flaps.ListAppsResponse{Apps: s.store.ListApps()})
+}
+
+func (s *Server) createApp(w http.ResponseWriter, r *http.Request) {
+	var req flaps.CreateAppRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.AppName == "" {
+		s.writeError(w, http.StatusBadRequest, "app_name is required")
+		return
+	}
+	app, err := s.store.CreateApp(flaps.App{Name: req.AppName, Organization: req.OrgSlug})
+	if errors.Is(err, store.ErrAppExists) {
+		s.writeError(w, http.StatusConflict, "app already exists")
+		return
+	}
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, app)
+}
+
+func (s *Server) getApp(w http.ResponseWriter, r *http.Request) {
+	app, err := s.store.GetApp(r.PathValue("app"))
+	if errors.Is(err, store.ErrAppNotFound) {
+		s.writeError(w, http.StatusNotFound, "app not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, app)
+}
+
+func (s *Server) deleteApp(w http.ResponseWriter, r *http.Request) {
+	err := s.store.DeleteApp(r.PathValue("app"))
+	if errors.Is(err, store.ErrAppNotFound) {
+		s.writeError(w, http.StatusNotFound, "app not found")
+		return
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
+// ---- machines ----
+
+func (s *Server) createMachine(w http.ResponseWriter, r *http.Request) {
+	app := r.PathValue("app")
+	if _, err := s.store.GetApp(app); errors.Is(err, store.ErrAppNotFound) {
+		s.writeError(w, http.StatusNotFound, "app not found")
+		return
+	}
+	var req flaps.CreateMachineRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	now := s.clk.Now().UTC().Format(time.RFC3339Nano)
+	instance := id.Instance()
+	m := flaps.Machine{
+		ID:         id.Machine(),
+		Name:       req.Name,
+		State:      flaps.StateCreating,
+		Region:     defaultString(req.Region, "local"),
+		InstanceID: instance,
+		PrivateIP:  "fdaa:0:0:a7b:0:1::",
+		Config:     req.Config,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+		Versions:   []flaps.MachineVersion{{InstanceID: instance, State: flaps.StateCreating}},
+	}
+	if m.Name == "" {
+		m.Name = "machine-" + m.ID
+	}
+	created, err := s.store.CreateMachine(app, m)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !req.SkipLaunch {
+		s.advancer.Create(app, created.ID)
+	}
+	writeJSON(w, http.StatusCreated, created)
+}
+
+func (s *Server) listMachines(w http.ResponseWriter, r *http.Request) {
+	machines, err := s.store.ListMachines(r.PathValue("app"))
+	if errors.Is(err, store.ErrAppNotFound) {
+		s.writeError(w, http.StatusNotFound, "app not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, machines)
+}
+
+func (s *Server) getMachine(w http.ResponseWriter, r *http.Request) {
+	m, err := s.store.GetMachine(r.PathValue("app"), r.PathValue("id"))
+	if s.handleLookupError(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, m)
+}
+
+// updateMachine applies a new config and churns the instance_id (version churn).
+func (s *Server) updateMachine(w http.ResponseWriter, r *http.Request) {
+	app, mID := r.PathValue("app"), r.PathValue("id")
+	if s.rejectIfLeased(w, r, app, mID) {
+		return
+	}
+	var req flaps.CreateMachineRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	updated, err := s.store.UpdateMachine(app, mID, func(m *flaps.Machine) error {
+		if req.Config != nil {
+			m.Config = req.Config
+		}
+		if req.Name != "" {
+			m.Name = req.Name
+		}
+		m.State = flaps.StateReplacing
+		return nil
+	})
+	if s.handleLookupError(w, err) {
+		return
+	}
+	s.touch(app, mID)
+	s.advancer.Update(app, mID)
+	writeJSON(w, http.StatusOK, updated)
+}
+
+func (s *Server) deleteMachine(w http.ResponseWriter, r *http.Request) {
+	app, mID := r.PathValue("app"), r.PathValue("id")
+	if s.rejectIfLeased(w, r, app, mID) {
+		return
+	}
+	_, err := s.store.UpdateMachine(app, mID, func(m *flaps.Machine) error {
+		m.State = flaps.StateDestroying
+		return nil
+	})
+	if s.handleLookupError(w, err) {
+		return
+	}
+	s.leases.Clear(leaseKey(app, mID))
+	s.touch(app, mID)
+	s.advancer.Destroy(app, mID)
+	writeJSON(w, http.StatusOK, flaps.WaitResponse{OK: true})
+}
+
+func (s *Server) startMachine(w http.ResponseWriter, r *http.Request) {
+	s.transition(w, r, flaps.StateStarting, s.advancer.Start)
+}
+
+func (s *Server) stopMachine(w http.ResponseWriter, r *http.Request) {
+	s.transition(w, r, flaps.StateStopping, s.advancer.Stop)
+}
+
+func (s *Server) restartMachine(w http.ResponseWriter, r *http.Request) {
+	s.transition(w, r, flaps.StateRestarting, s.advancer.Restart)
+}
+
+// transition sets a transient state then schedules the advance to rest.
+func (s *Server) transition(w http.ResponseWriter, r *http.Request, transient flaps.MachineState, advance func(app, id string)) {
+	app, mID := r.PathValue("app"), r.PathValue("id")
+	if s.rejectIfLeased(w, r, app, mID) {
+		return
+	}
+	_, err := s.store.UpdateMachine(app, mID, func(m *flaps.Machine) error {
+		m.State = transient
+		return nil
+	})
+	if s.handleLookupError(w, err) {
+		return
+	}
+	s.touch(app, mID)
+	advance(app, mID)
+	writeJSON(w, http.StatusOK, flaps.WaitResponse{OK: true})
+}
+
+// waitMachine blocks until the machine reaches the requested state or the
+// (clamped) timeout elapses, in which case it returns 408.
+func (s *Server) waitMachine(w http.ResponseWriter, r *http.Request) {
+	app, mID := r.PathValue("app"), r.PathValue("id")
+	target := flaps.MachineState(defaultString(r.URL.Query().Get("state"), string(flaps.StateStarted)))
+	wantInstance := r.URL.Query().Get("instance_id")
+	timeout := clampTimeout(r.URL.Query().Get("timeout"))
+
+	deadline := time.Now().Add(timeout)
+	for {
+		m, err := s.store.GetMachine(app, mID)
+		switch {
+		case errors.Is(err, store.ErrMachineNotFound):
+			// A destroyed machine that has been reaped counts as destroyed.
+			if target == flaps.StateDestroyed {
+				writeJSON(w, http.StatusOK, flaps.WaitResponse{OK: true})
+				return
+			}
+			s.writeError(w, http.StatusNotFound, "machine not found")
+			return
+		case errors.Is(err, store.ErrAppNotFound):
+			s.writeError(w, http.StatusNotFound, "app not found")
+			return
+		}
+		if m.State == target && (wantInstance == "" || wantInstance == m.InstanceID) {
+			writeJSON(w, http.StatusOK, flaps.WaitResponse{OK: true})
+			return
+		}
+		if time.Now().After(deadline) {
+			s.writeError(w, http.StatusRequestTimeout, "timeout waiting for machine to reach "+string(target))
+			return
+		}
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(waitPollInterval):
+		}
+	}
+}
+
+// ---- leases ----
+
+func (s *Server) getLease(w http.ResponseWriter, r *http.Request) {
+	app, mID := r.PathValue("app"), r.PathValue("id")
+	if _, err := s.store.GetMachine(app, mID); s.handleLookupError(w, err) {
+		return
+	}
+	l, err := s.leases.Get(leaseKey(app, mID))
+	if errors.Is(err, lease.ErrNotFound) {
+		s.writeError(w, http.StatusNotFound, "no active lease")
+		return
+	}
+	writeJSON(w, http.StatusOK, leaseEnvelope(l))
+}
+
+func (s *Server) acquireLease(w http.ResponseWriter, r *http.Request) {
+	app, mID := r.PathValue("app"), r.PathValue("id")
+	if _, err := s.store.GetMachine(app, mID); s.handleLookupError(w, err) {
+		return
+	}
+	var req flaps.AcquireLeaseRequest
+	if r.ContentLength != 0 && !decodeJSON(w, r, &req) {
+		return
+	}
+	ttl := s.leaseTTL
+	if req.TTL > 0 {
+		ttl = time.Duration(req.TTL) * time.Second
+	}
+	key := leaseKey(app, mID)
+
+	// A request that carries a nonce is a refresh of an existing lease.
+	if nonce := r.Header.Get(LeaseNonceHeader); nonce != "" {
+		l, err := s.leases.Refresh(key, nonce, ttl)
+		if err != nil {
+			s.writeError(w, http.StatusConflict, "lease refresh rejected: "+err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, leaseEnvelope(l))
+		return
+	}
+
+	l, err := s.leases.Acquire(key, "mudflaps", req.Description, ttl)
+	if errors.Is(err, lease.ErrConflict) {
+		s.writeError(w, http.StatusConflict, "machine lease currently held")
+		return
+	}
+	writeJSON(w, http.StatusOK, leaseEnvelope(l))
+}
+
+func (s *Server) releaseLease(w http.ResponseWriter, r *http.Request) {
+	app, mID := r.PathValue("app"), r.PathValue("id")
+	if _, err := s.store.GetMachine(app, mID); s.handleLookupError(w, err) {
+		return
+	}
+	nonce := r.Header.Get(LeaseNonceHeader)
+	err := s.leases.Release(leaseKey(app, mID), nonce)
+	switch {
+	case errors.Is(err, lease.ErrNotFound):
+		s.writeError(w, http.StatusNotFound, "no active lease")
+		return
+	case errors.Is(err, lease.ErrNonceMismatch):
+		s.writeError(w, http.StatusConflict, "lease nonce mismatch")
+		return
+	}
+	writeJSON(w, http.StatusOK, flaps.MachineLease{Status: "released"})
+}
+
+// ---- meta ----
+
+func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":        "ok",
+		"version":       s.version,
+		"implemented":   implementedPaths,
+		"unimplemented": unimplementedPaths,
+	})
+}
+
+func (s *Server) notImplemented(w http.ResponseWriter, r *http.Request) {
+	s.writeError(w, http.StatusNotImplemented, r.URL.Path+" is on the mudflaps roadmap but not implemented yet")
+}
+
+// ---- helpers ----
+
+// rejectIfLeased returns true (and has written a 409) when a mutating request
+// lacks the nonce for an actively held lease.
+func (s *Server) rejectIfLeased(w http.ResponseWriter, r *http.Request, app, mID string) bool {
+	if err := s.leases.Check(leaseKey(app, mID), r.Header.Get(LeaseNonceHeader)); errors.Is(err, lease.ErrConflict) {
+		s.writeError(w, http.StatusConflict, "machine is leased; supply the "+LeaseNonceHeader+" header")
+		return true
+	}
+	return false
+}
+
+// touch updates a machine's UpdatedAt to the current clock time.
+func (s *Server) touch(app, mID string) {
+	_, _ = s.store.UpdateMachine(app, mID, func(m *flaps.Machine) error {
+		m.UpdatedAt = s.clk.Now().UTC().Format(time.RFC3339Nano)
+		return nil
+	})
+}
+
+// handleLookupError writes a 404 for app/machine not-found errors and reports
+// whether it wrote a response.
+func (s *Server) handleLookupError(w http.ResponseWriter, err error) bool {
+	switch {
+	case err == nil:
+		return false
+	case errors.Is(err, store.ErrAppNotFound):
+		s.writeError(w, http.StatusNotFound, "app not found")
+	case errors.Is(err, store.ErrMachineNotFound):
+		s.writeError(w, http.StatusNotFound, "machine not found")
+	default:
+		s.writeError(w, http.StatusInternalServerError, err.Error())
+	}
+	return true
+}
+
+func (s *Server) writeError(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, flaps.ErrorResponse{Error: msg, Status: status})
+}
+
+func leaseKey(app, machineID string) string { return app + "/" + machineID }
+
+func leaseEnvelope(l *lease.Lease) flaps.MachineLease {
+	return flaps.MachineLease{
+		Status: "success",
+		Data: &flaps.MachineLeaseData{
+			Nonce:       l.Nonce,
+			ExpiresAt:   l.ExpiresAt.Unix(),
+			Owner:       l.Owner,
+			Description: l.Description,
+		},
+	}
+}
+
+func clampTimeout(raw string) time.Duration {
+	const minTimeout, maxTimeout = time.Second, 60 * time.Second
+	if raw == "" {
+		return maxTimeout
+	}
+	// The flaps timeout parameter is an integer number of seconds.
+	secs, err := strconv.Atoi(raw)
+	if err != nil || secs <= 0 {
+		return maxTimeout
+	}
+	d := time.Duration(secs) * time.Second
+	switch {
+	case d < minTimeout:
+		return minTimeout
+	case d > maxTimeout:
+		return maxTimeout
+	default:
+		return d
+	}
+}
+
+func defaultString(v, fallback string) string {
+	if v == "" {
+		return fallback
+	}
+	return v
+}
+
+func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
+	if r.Body == nil {
+		return true
+	}
+	err := json.NewDecoder(r.Body).Decode(dst)
+	if err == nil || errors.Is(err, io.EOF) {
+		// An empty body decodes to the zero value, which is a valid request for
+		// the endpoints that accept optional bodies.
+		return true
+	}
+	writeJSON(w, http.StatusBadRequest, flaps.ErrorResponse{
+		Error:  "invalid JSON body: " + err.Error(),
+		Status: http.StatusBadRequest,
+	})
+	return false
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
