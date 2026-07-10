@@ -114,13 +114,24 @@ func TestStopAndDestroy(t *testing.T) {
 	}
 }
 
-func TestUpdateChurnsInstanceID(t *testing.T) {
+// TestUpdateBootsReplacingToStarted covers the advancer's half of an update:
+// the server has already churned the version synchronously (new instance_id,
+// state replacing), so the advancer only boots the new version to started.
+func TestUpdateBootsReplacingToStarted(t *testing.T) {
 	s, clk, a := newFixture(t)
 	seed(t, s)
 
-	before, err := s.GetMachine("demo", "m1")
-	if err != nil {
-		t.Fatalf("GetMachine: %v", err)
+	// Simulate the server's synchronous churn.
+	if _, err := s.UpdateMachine("demo", "m1", func(m *flaps.Machine) error {
+		m.Versions[len(m.Versions)-1].State = flaps.StateReplaced
+		m.InstanceID = "INSTANCE1"
+		m.State = flaps.StateReplacing
+		m.Versions = append(m.Versions, flaps.MachineVersion{
+			InstanceID: "INSTANCE1", State: flaps.StateReplacing,
+		})
+		return nil
+	}); err != nil {
+		t.Fatalf("seed churn: %v", err)
 	}
 
 	a.Update("demo", "m1")
@@ -133,21 +144,11 @@ func TestUpdateChurnsInstanceID(t *testing.T) {
 	if after.State != flaps.StateStarted {
 		t.Fatalf("state = %q, want started", after.State)
 	}
-	if after.InstanceID == before.InstanceID {
-		t.Fatalf("instance_id did not churn: still %q", after.InstanceID)
-	}
-	if len(after.Versions) < 2 {
-		t.Fatalf("expected version history, got %d entries", len(after.Versions))
-	}
-	prior := after.Versions[len(after.Versions)-2]
-	if prior.State != flaps.StateReplaced {
-		t.Fatalf("prior version state = %q, want replaced", prior.State)
-	}
-	if prior.InstanceID != before.InstanceID {
-		t.Fatalf("prior version instance = %q, want %q", prior.InstanceID, before.InstanceID)
-	}
 	current := after.Versions[len(after.Versions)-1]
-	if current.InstanceID != after.InstanceID {
-		t.Fatalf("current version instance = %q, want %q", current.InstanceID, after.InstanceID)
+	if current.InstanceID != "INSTANCE1" || current.State != flaps.StateStarted {
+		t.Fatalf("current version = %+v, want INSTANCE1/started", current)
+	}
+	if prior := after.Versions[len(after.Versions)-2]; prior.State != flaps.StateReplaced {
+		t.Fatalf("prior version state = %q, want replaced", prior.State)
 	}
 }

@@ -255,6 +255,12 @@ func (s *Server) updateMachine(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
+	// Version churn is synchronous, matching flaps: minting the new version and
+	// marking the previous one replaced is part of the update response, not a
+	// later async step. Only the boot (replacing -> started) is deferred to the
+	// advancer, so a client can immediately
+	// GET .../wait?instance_id=<new>&state=started.
+	newInstance := id.Instance()
 	updated, err := s.store.UpdateMachine(app, mID, func(m *flaps.Machine) error {
 		if req.Config != nil {
 			m.Config = req.Config
@@ -262,7 +268,15 @@ func (s *Server) updateMachine(w http.ResponseWriter, r *http.Request) {
 		if req.Name != "" {
 			m.Name = req.Name
 		}
+		if n := len(m.Versions); n > 0 {
+			m.Versions[n-1].State = flaps.StateReplaced
+		}
+		m.InstanceID = newInstance
 		m.State = flaps.StateReplacing
+		m.Versions = append(m.Versions, flaps.MachineVersion{
+			InstanceID: newInstance,
+			State:      flaps.StateReplacing,
+		})
 		return nil
 	})
 	if s.handleLookupError(w, err) {
