@@ -72,7 +72,7 @@ func (h *harness) createStartedMachine(app string) flaps.Machine {
 	code, body := h.do(http.MethodPost, "/v1/apps/"+app+"/machines", flaps.CreateMachineRequest{
 		Config: &flaps.MachineConfig{Image: "nginx"},
 	}, nil)
-	if code != http.StatusCreated {
+	if code != http.StatusOK {
 		h.t.Fatalf("create machine: %d %s", code, body)
 	}
 	var m flaps.Machine
@@ -465,7 +465,7 @@ func TestSkipLaunchRestsInCreated(t *testing.T) {
 	}
 	code, body := h.do(http.MethodPost, "/v1/apps/demo/machines",
 		flaps.CreateMachineRequest{Config: &flaps.MachineConfig{Image: "nginx"}, SkipLaunch: true}, nil)
-	if code != http.StatusCreated {
+	if code != http.StatusOK {
 		t.Fatalf("create = %d %s", code, body)
 	}
 	var m flaps.Machine
@@ -595,7 +595,7 @@ func TestWaitTimesOut(t *testing.T) {
 	// skip_launch leaves the machine in 'created', so it never reaches 'started'.
 	code, body := h.do(http.MethodPost, "/v1/apps/demo/machines",
 		flaps.CreateMachineRequest{Config: &flaps.MachineConfig{Image: "nginx"}, SkipLaunch: true}, nil)
-	if code != http.StatusCreated {
+	if code != http.StatusOK {
 		t.Fatalf("create machine = %d %s", code, body)
 	}
 	var m flaps.Machine
@@ -744,5 +744,47 @@ func TestDeleteAppWithLeasedMachine(t *testing.T) {
 	// The app and its machines are gone.
 	if code, _ := h.do(http.MethodGet, "/v1/apps/demo/machines/"+m.ID, nil, nil); code != http.StatusNotFound {
 		t.Fatalf("machine still present after app delete = %d", code)
+	}
+}
+
+// TestResponseShapesMatchFlaps is the regression for the audit cosmetic bundle:
+// create -> 200, start -> MachineStartResponse, delete -> empty body, and lease
+// data has no description field.
+func TestResponseShapesMatchFlaps(t *testing.T) {
+	h := newHarness(t)
+	if code, body := h.do(http.MethodPost, "/v1/apps", flaps.CreateAppRequest{AppName: "demo"}, nil); code != http.StatusCreated {
+		t.Fatalf("create app = %d %s", code, body)
+	}
+	// create machine -> 200 (not 201)
+	code, body := h.do(http.MethodPost, "/v1/apps/demo/machines",
+		flaps.CreateMachineRequest{Config: &flaps.MachineConfig{Image: "nginx"}}, nil)
+	if code != http.StatusOK {
+		t.Fatalf("create machine = %d, want 200", code)
+	}
+	var m flaps.Machine
+	h.mustJSON(body, &m)
+	h.clk.Advance(time.Hour)
+
+	// start -> MachineStartResponse with previous_state
+	_, body = h.do(http.MethodPost, "/v1/apps/demo/machines/"+m.ID+"/start", nil, nil)
+	var sr flaps.MachineStartResponse
+	h.mustJSON(body, &sr)
+	if sr.Status != "ok" || sr.PreviousState == "" {
+		t.Fatalf("start response = %+v, want status=ok + previous_state", sr)
+	}
+	if strings.Contains(string(body), `"ok":`) {
+		t.Fatalf("start body should not be the wait envelope: %s", body)
+	}
+
+	// lease data has no `description` field
+	_, body = h.do(http.MethodPost, "/v1/apps/demo/machines/"+m.ID+"/lease", flaps.AcquireLeaseRequest{TTL: 30, Description: "x"}, nil)
+	if strings.Contains(string(body), `"description"`) {
+		t.Fatalf("lease data should not surface description: %s", body)
+	}
+
+	// delete -> empty object body (no "ok")
+	_, body = h.do(http.MethodDelete, "/v1/apps/demo/machines/"+m.ID, nil, map[string]string{})
+	if strings.Contains(string(body), `"ok"`) {
+		t.Fatalf("delete body should be empty object, got: %s", body)
 	}
 }

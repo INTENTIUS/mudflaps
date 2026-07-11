@@ -161,11 +161,10 @@ type MachineLease struct {
 // MachineLeaseData is the lease itself: an owner holds it via a nonce until it
 // expires.
 type MachineLeaseData struct {
-	Nonce       string `json:"nonce"`
-	ExpiresAt   int64  `json:"expires_at"`
-	Owner       string `json:"owner,omitempty"`
-	Description string `json:"description,omitempty"`
-	Version     string `json:"version,omitempty"`
+	Nonce     string `json:"nonce"`
+	ExpiresAt int64  `json:"expires_at"`
+	Owner     string `json:"owner,omitempty"`
+	Version   string `json:"version,omitempty"`
 }
 
 // AcquireLeaseRequest is the body of POST .../lease.
@@ -177,6 +176,13 @@ type AcquireLeaseRequest struct {
 // WaitResponse is returned by a successful GET .../wait.
 type WaitResponse struct {
 	OK bool `json:"ok"`
+}
+
+// MachineStartResponse is returned by POST .../start, matching fly-go.
+type MachineStartResponse struct {
+	Message       string `json:"message,omitempty"`
+	Status        string `json:"status,omitempty"`
+	PreviousState string `json:"previous_state,omitempty"`
 }
 
 // StopMachineInput is the optional body of POST .../stop. mudflaps accepts the
