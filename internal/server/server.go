@@ -303,12 +303,14 @@ func (s *Server) updateMachine(w http.ResponseWriter, r *http.Request) {
 			InstanceID: newInstance,
 			State:      flaps.StateReplacing,
 		})
+		// Set UpdatedAt in the same mutation so the response reflects it (not a
+		// later touch that the returned snapshot would miss).
+		m.UpdatedAt = s.clk.Now().UTC().Format(time.RFC3339Nano)
 		return nil
 	})
 	if s.handleLookupError(w, err) {
 		return
 	}
-	s.touch(app, mID)
 	s.advancer.Update(app, mID)
 	writeJSON(w, http.StatusOK, updated)
 }
@@ -686,14 +688,15 @@ func clampTimeout(raw string) time.Duration {
 	if raw == "" {
 		return maxTimeout
 	}
-	// The flaps timeout parameter is an integer number of seconds.
+	// The flaps timeout parameter is an integer number of seconds. Invalid or
+	// non-positive values clamp to the 1s floor, not the 60s ceiling.
 	secs, err := strconv.Atoi(raw)
-	if err != nil || secs <= 0 {
-		return maxTimeout
+	if err != nil {
+		return minTimeout
 	}
 	d := time.Duration(secs) * time.Second
 	switch {
-	case d < minTimeout:
+	case d < minTimeout: // includes 0 and negative
 		return minTimeout
 	case d > maxTimeout:
 		return maxTimeout

@@ -689,3 +689,42 @@ func TestNotFoundPaths(t *testing.T) {
 		t.Fatalf("missing machine app = %d, want 404", code)
 	}
 }
+
+// TestClampTimeoutFloor is the regression for the audit clampTimeout finding:
+// non-positive/garbage timeouts clamp to the 1s floor, not the 60s ceiling.
+func TestClampTimeoutFloor(t *testing.T) {
+	cases := map[string]time.Duration{
+		"":    60 * time.Second, // unspecified -> default max
+		"0":   time.Second,      // non-positive -> floor
+		"-5":  time.Second,
+		"abc": time.Second, // garbage -> floor
+		"30":  30 * time.Second,
+		"120": 60 * time.Second, // above ceiling -> max
+	}
+	for raw, want := range cases {
+		if got := clampTimeout(raw); got != want {
+			t.Fatalf("clampTimeout(%q) = %v, want %v", raw, got, want)
+		}
+	}
+}
+
+// TestUpdateResponseHasFreshUpdatedAt is the regression for the audit stale
+// updated_at finding: the update response carries the bumped timestamp.
+func TestUpdateResponseHasFreshUpdatedAt(t *testing.T) {
+	h := newHarness(t)
+	m := h.createStartedMachine("demo")
+	h.clk.Advance(time.Hour) // move the clock past create time
+	_, body := h.do(http.MethodPost, "/v1/apps/demo/machines/"+m.ID,
+		flaps.CreateMachineRequest{Config: &flaps.MachineConfig{Image: "nginx:2"}}, nil)
+	var resp flaps.Machine
+	h.mustJSON(body, &resp)
+	if resp.UpdatedAt == m.UpdatedAt {
+		t.Fatalf("update response updated_at not refreshed from %q", m.UpdatedAt)
+	}
+	_, body = h.do(http.MethodGet, "/v1/apps/demo/machines/"+m.ID, nil, nil)
+	var got flaps.Machine
+	h.mustJSON(body, &got)
+	if got.UpdatedAt != resp.UpdatedAt {
+		t.Fatalf("updated_at diverged: response %q vs get %q", resp.UpdatedAt, got.UpdatedAt)
+	}
+}
