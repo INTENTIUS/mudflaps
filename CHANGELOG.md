@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `GET /v1/platform/regions` returns a static, representative list of Fly regions
+  (unblocks region validation for clients).
+
 ## [0.2.0] - 2026-07-10
 
 Fidelity and correctness pass from an adversarial audit against `superfly/fly-go`.

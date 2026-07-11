@@ -788,3 +788,33 @@ func TestResponseShapesMatchFlaps(t *testing.T) {
 		t.Fatalf("delete body should be empty object, got: %s", body)
 	}
 }
+
+// TestPlatformRegions covers GET /v1/platform/regions (breadth #22).
+func TestPlatformRegions(t *testing.T) {
+	h := newHarness(t)
+	code, body := h.do(http.MethodGet, "/v1/platform/regions", nil, nil)
+	if code != http.StatusOK {
+		t.Fatalf("regions = %d %s", code, body)
+	}
+	var rd flaps.RegionData
+	h.mustJSON(body, &rd)
+	if len(rd.Regions) == 0 {
+		t.Fatalf("expected non-empty regions")
+	}
+	found := map[string]bool{}
+	for _, r := range rd.Regions {
+		if r.Code == "" || r.Name == "" {
+			t.Fatalf("region missing code/name: %+v", r)
+		}
+		found[r.Code] = true
+	}
+	for _, want := range []string{"iad", "lhr", "syd"} {
+		if !found[want] {
+			t.Fatalf("regions missing %q", want)
+		}
+	}
+	// The wire tag is capital-R "Regions" (fly-go contract).
+	if !strings.Contains(string(body), `"Regions"`) {
+		t.Fatalf("response must use the capital-R Regions tag: %s", body[:80])
+	}
+}

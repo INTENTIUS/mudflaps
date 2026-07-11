@@ -185,6 +185,22 @@ type MachineStartResponse struct {
 	PreviousState string `json:"previous_state,omitempty"`
 }
 
+// Region is a Fly region. The capitalized JSON tags on RegionData match fly-go's
+// GetRegions response exactly (they are the wire contract).
+type Region struct {
+	Code             string  `json:"code"`
+	Name             string  `json:"name"`
+	Latitude         float32 `json:"latitude,omitempty"`
+	Longitude        float32 `json:"longitude,omitempty"`
+	GatewayAvailable bool    `json:"gateway_available,omitempty"`
+}
+
+// RegionData is the GET /v1/platform/regions response.
+type RegionData struct {
+	Regions []Region `json:"Regions"`
+	Nearest string   `json:"Nearest,omitempty"`
+}
+
 // StopMachineInput is the optional body of POST .../stop. mudflaps accepts the
 // signal/timeout to honor the request shape; it does not model real signals.
 // Timeout is a duration string ("0s", "10s") to match fly-go, whose Timeout is
