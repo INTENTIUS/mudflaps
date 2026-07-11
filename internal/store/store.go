@@ -15,6 +15,7 @@ var (
 	ErrAppNotFound     = errors.New("app not found")
 	ErrAppExists       = errors.New("app already exists")
 	ErrMachineNotFound = errors.New("machine not found")
+	ErrVolumeNotFound  = errors.New("volume not found")
 )
 
 // Store holds apps and their machines.
@@ -26,6 +27,7 @@ type Store struct {
 type appEntry struct {
 	app      flaps.App
 	machines map[string]*flaps.Machine
+	volumes  map[string]*flaps.Volume
 }
 
 // New returns an empty store.
@@ -43,7 +45,11 @@ func (s *Store) CreateApp(app flaps.App) (flaps.App, error) {
 	if app.Status == "" {
 		app.Status = "deployed"
 	}
-	s.apps[app.Name] = &appEntry{app: app, machines: make(map[string]*flaps.Machine)}
+	s.apps[app.Name] = &appEntry{
+		app:      app,
+		machines: make(map[string]*flaps.Machine),
+		volumes:  make(map[string]*flaps.Volume),
+	}
 	return app, nil
 }
 
@@ -227,4 +233,94 @@ func cloneStringMap(in map[string]string) map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+// ---- volumes ----
+
+// CreateVolume stores a volume under an app, keyed by its ID.
+func (s *Store) CreateVolume(app string, v flaps.Volume) (flaps.Volume, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e, ok := s.apps[app]
+	if !ok {
+		return flaps.Volume{}, ErrAppNotFound
+	}
+	stored := cloneVolume(&v)
+	e.volumes[v.ID] = stored
+	return *cloneVolume(stored), nil
+}
+
+// GetVolume returns a copy of a volume.
+func (s *Store) GetVolume(app, id string) (flaps.Volume, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	v, err := s.lookupVolume(app, id)
+	if err != nil {
+		return flaps.Volume{}, err
+	}
+	return *cloneVolume(v), nil
+}
+
+// ListVolumes returns copies of every volume under an app.
+func (s *Store) ListVolumes(app string) ([]flaps.Volume, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	e, ok := s.apps[app]
+	if !ok {
+		return nil, ErrAppNotFound
+	}
+	out := make([]flaps.Volume, 0, len(e.volumes))
+	for _, v := range e.volumes {
+		out = append(out, *cloneVolume(v))
+	}
+	return out, nil
+}
+
+// UpdateVolume applies fn to a stored volume and returns a copy.
+func (s *Store) UpdateVolume(app, id string, fn func(v *flaps.Volume) error) (flaps.Volume, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	v, err := s.lookupVolume(app, id)
+	if err != nil {
+		return flaps.Volume{}, err
+	}
+	if err := fn(v); err != nil {
+		return flaps.Volume{}, err
+	}
+	return *cloneVolume(v), nil
+}
+
+// DeleteVolume removes a volume and returns a copy of what was removed.
+func (s *Store) DeleteVolume(app, id string) (flaps.Volume, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	v, err := s.lookupVolume(app, id)
+	if err != nil {
+		return flaps.Volume{}, err
+	}
+	out := *cloneVolume(v)
+	delete(s.apps[app].volumes, id)
+	return out, nil
+}
+
+// lookupVolume finds a volume without locking; callers must hold s.mu.
+func (s *Store) lookupVolume(app, id string) (*flaps.Volume, error) {
+	e, ok := s.apps[app]
+	if !ok {
+		return nil, ErrAppNotFound
+	}
+	v, ok := e.volumes[id]
+	if !ok {
+		return nil, ErrVolumeNotFound
+	}
+	return v, nil
+}
+
+func cloneVolume(v *flaps.Volume) *flaps.Volume {
+	c := *v
+	if v.AttachedMachine != nil {
+		am := *v.AttachedMachine
+		c.AttachedMachine = &am
+	}
+	return &c
 }

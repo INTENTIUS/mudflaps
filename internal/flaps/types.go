@@ -185,6 +185,36 @@ type MachineStartResponse struct {
 	PreviousState string `json:"previous_state,omitempty"`
 }
 
+// Volume is a Fly volume. Field names mirror fly-go's Volume; created_at is a
+// string here (marshals to the same RFC3339 a time.Time would).
+type Volume struct {
+	ID                string  `json:"id"`
+	Name              string  `json:"name"`
+	State             string  `json:"state"`
+	SizeGb            int     `json:"size_gb"`
+	Region            string  `json:"region"`
+	Zone              string  `json:"zone"`
+	Encrypted         bool    `json:"encrypted"`
+	AttachedMachine   *string `json:"attached_machine_id"`
+	SnapshotRetention int     `json:"snapshot_retention,omitempty"`
+	AutoBackupEnabled bool    `json:"auto_backup_enabled,omitempty"`
+	CreatedAt         string  `json:"created_at"`
+}
+
+// CreateVolumeRequest is the body of POST .../volumes.
+type CreateVolumeRequest struct {
+	Name      string `json:"name"`
+	Region    string `json:"region"`
+	SizeGb    *int   `json:"size_gb"`
+	Encrypted *bool  `json:"encrypted"`
+}
+
+// UpdateVolumeRequest is the body of PUT .../volumes/{vol}.
+type UpdateVolumeRequest struct {
+	SnapshotRetention *int  `json:"snapshot_retention"`
+	AutoBackupEnabled *bool `json:"auto_backup_enabled"`
+}
+
 // Region is a Fly region. The capitalized JSON tags on RegionData match fly-go's
 // GetRegions response exactly (they are the wire contract).
 type Region struct {

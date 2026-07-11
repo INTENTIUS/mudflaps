@@ -626,8 +626,8 @@ func TestWaitTimesOut(t *testing.T) {
 
 func TestUnimplementedReturns501(t *testing.T) {
 	h := newHarness(t)
-	if code, body := h.do(http.MethodGet, "/v1/apps/demo/volumes", nil, nil); code != http.StatusNotImplemented {
-		t.Fatalf("volumes = %d %s, want 501", code, body)
+	if code, body := h.do(http.MethodGet, "/v1/apps/demo/secrets", nil, nil); code != http.StatusNotImplemented {
+		t.Fatalf("secrets = %d %s, want 501", code, body)
 	}
 }
 
@@ -816,5 +816,58 @@ func TestPlatformRegions(t *testing.T) {
 	// The wire tag is capital-R "Regions" (fly-go contract).
 	if !strings.Contains(string(body), `"Regions"`) {
 		t.Fatalf("response must use the capital-R Regions tag: %s", body[:80])
+	}
+}
+
+// TestVolumeCRUD covers the volume endpoints (breadth #18).
+func TestVolumeCRUD(t *testing.T) {
+	h := newHarness(t)
+	if code, body := h.do(http.MethodPost, "/v1/apps", flaps.CreateAppRequest{AppName: "demo"}, nil); code != http.StatusCreated {
+		t.Fatalf("create app = %d %s", code, body)
+	}
+	// empty list, not 501
+	code, body := h.do(http.MethodGet, "/v1/apps/demo/volumes", nil, nil)
+	if code != http.StatusOK {
+		t.Fatalf("list volumes = %d %s, want 200", code, body)
+	}
+	var vols []flaps.Volume
+	h.mustJSON(body, &vols)
+	if len(vols) != 0 {
+		t.Fatalf("expected empty volume list, got %d", len(vols))
+	}
+	// create
+	size := 3
+	code, body = h.do(http.MethodPost, "/v1/apps/demo/volumes",
+		flaps.CreateVolumeRequest{Name: "data", Region: "iad", SizeGb: &size}, nil)
+	if code != http.StatusOK {
+		t.Fatalf("create volume = %d %s", code, body)
+	}
+	var v flaps.Volume
+	h.mustJSON(body, &v)
+	if v.ID == "" || v.Name != "data" || v.SizeGb != 3 || v.Region != "iad" || v.State != "created" {
+		t.Fatalf("unexpected created volume: %+v", v)
+	}
+	// get
+	if code, body := h.do(http.MethodGet, "/v1/apps/demo/volumes/"+v.ID, nil, nil); code != http.StatusOK {
+		t.Fatalf("get volume = %d %s", code, body)
+	}
+	// list shows it
+	_, body = h.do(http.MethodGet, "/v1/apps/demo/volumes", nil, nil)
+	h.mustJSON(body, &vols)
+	if len(vols) != 1 {
+		t.Fatalf("expected 1 volume, got %d", len(vols))
+	}
+	// update
+	ab := true
+	if code, body := h.do(http.MethodPut, "/v1/apps/demo/volumes/"+v.ID,
+		flaps.UpdateVolumeRequest{AutoBackupEnabled: &ab}, nil); code != http.StatusOK {
+		t.Fatalf("update volume = %d %s", code, body)
+	}
+	// delete
+	if code, body := h.do(http.MethodDelete, "/v1/apps/demo/volumes/"+v.ID, nil, nil); code != http.StatusOK {
+		t.Fatalf("delete volume = %d %s", code, body)
+	}
+	if code, _ := h.do(http.MethodGet, "/v1/apps/demo/volumes/"+v.ID, nil, nil); code != http.StatusNotFound {
+		t.Fatalf("get after delete = %d, want 404", code)
 	}
 }

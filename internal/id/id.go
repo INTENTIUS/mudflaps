@@ -32,6 +32,14 @@ func Instance() string {
 	return string(out)
 }
 
+// Volume returns a "vol_"-prefixed identifier, matching the shape of Fly volume
+// IDs (for example "vol_0abc12de34fg56hi").
+func Volume() string {
+	b := make([]byte, 8)
+	mustRead(b)
+	return "vol_" + hex.EncodeToString(b)
+}
+
 // Nonce returns a random hex string suitable for use as a lease nonce.
 func Nonce() string {
 	b := make([]byte, 16)
