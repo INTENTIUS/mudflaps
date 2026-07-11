@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -45,10 +46,17 @@ func run() error {
 
 	srv := server.New(server.Options{Version: version, Logger: logger})
 
+	// A cancellable base context is handed to every request. Cancelling it on
+	// shutdown unblocks in-flight long-polls (/wait), so Shutdown drains
+	// promptly instead of waiting out their timeouts.
+	baseCtx, cancelBase := context.WithCancel(context.Background())
+	defer cancelBase()
+
 	httpServer := &http.Server{
 		Addr:              *addr,
 		Handler:           srv.Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
+		BaseContext:       func(net.Listener) context.Context { return baseCtx },
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -71,6 +79,10 @@ func run() error {
 	case <-ctx.Done():
 		logger.Info("shutdown signal received, draining connections")
 	}
+
+	// Unblock in-flight long-polls before draining so shutdown doesn't wait out
+	// their timeouts.
+	cancelBase()
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
