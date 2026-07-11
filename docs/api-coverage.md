@@ -1,7 +1,7 @@
 # API coverage
 
 mudflaps implements the subset of flaps that an infrastructure-as-code applier
-exercises: apps, machines (full lifecycle), metadata, wait, and leases.
+exercises: apps, machines (full lifecycle), metadata, wait, leases, and volumes.
 Endpoints that are not yet built answer `501 Not Implemented` with a clear JSON
 error rather than a misleading success, and they are listed under
 `unimplemented` in the `/_mudflaps/health` payload.
@@ -32,6 +32,11 @@ error rather than a misleading success, and they are listed under
 | GET | `/v1/apps/{app}/machines/{id}/lease` | Read the active lease. |
 | POST | `/v1/apps/{app}/machines/{id}/lease` | Acquire or refresh a lease. |
 | DELETE | `/v1/apps/{app}/machines/{id}/lease` | Release a lease. |
+| GET | `/v1/apps/{app}/volumes` | List volumes. |
+| POST | `/v1/apps/{app}/volumes` | Create a volume. |
+| GET | `/v1/apps/{app}/volumes/{vol}` | Get a volume. |
+| PUT | `/v1/apps/{app}/volumes/{vol}` | Update a volume. |
+| DELETE | `/v1/apps/{app}/volumes/{vol}` | Delete a volume. |
 | GET | `/v1/platform/regions` | List Fly regions (a static, representative set). |
 | GET | `/_mudflaps/health` | Version and coverage report (mudflaps-only). |
 
@@ -39,7 +44,6 @@ error rather than a misleading success, and they are listed under
 
 | Path | Area |
 | --- | --- |
-| `/v1/apps/{app}/volumes` | Volumes |
 | `/v1/apps/{app}/secrets` | Secrets |
 | `/v1/apps/{app}/certificates` | Certificates |
 | `/v1/apps/{app}/ip_assignments` | IP assignments |
