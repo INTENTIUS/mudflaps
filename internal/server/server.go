@@ -197,7 +197,15 @@ func (s *Server) getApp(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteApp(w http.ResponseWriter, r *http.Request) {
-	err := s.store.DeleteApp(r.PathValue("app"))
+	app := r.PathValue("app")
+	// Clear any leases held on this app's machines so they don't leak in the
+	// lease manager after the machines are dropped.
+	if machines, err := s.store.ListMachines(app); err == nil {
+		for _, m := range machines {
+			s.leases.Clear(leaseKey(app, m.ID))
+		}
+	}
+	err := s.store.DeleteApp(app)
 	if errors.Is(err, store.ErrAppNotFound) {
 		s.writeError(w, http.StatusNotFound, "app not found")
 		return

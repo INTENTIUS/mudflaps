@@ -728,3 +728,21 @@ func TestUpdateResponseHasFreshUpdatedAt(t *testing.T) {
 		t.Fatalf("updated_at diverged: response %q vs get %q", resp.UpdatedAt, got.UpdatedAt)
 	}
 }
+
+// TestDeleteAppWithLeasedMachine exercises the audit cleanup path: deleting an
+// app that has a leased machine succeeds and clears its leases (no leak).
+func TestDeleteAppWithLeasedMachine(t *testing.T) {
+	h := newHarness(t)
+	m := h.createStartedMachine("demo")
+	if code, body := h.do(http.MethodPost, "/v1/apps/demo/machines/"+m.ID+"/lease",
+		flaps.AcquireLeaseRequest{TTL: 30}, nil); code != http.StatusOK {
+		t.Fatalf("acquire lease = %d %s", code, body)
+	}
+	if code, body := h.do(http.MethodDelete, "/v1/apps/demo", nil, nil); code != http.StatusAccepted {
+		t.Fatalf("delete app = %d %s, want 202", code, body)
+	}
+	// The app and its machines are gone.
+	if code, _ := h.do(http.MethodGet, "/v1/apps/demo/machines/"+m.ID, nil, nil); code != http.StatusNotFound {
+		t.Fatalf("machine still present after app delete = %d", code)
+	}
+}
