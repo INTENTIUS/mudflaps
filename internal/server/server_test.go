@@ -626,8 +626,8 @@ func TestWaitTimesOut(t *testing.T) {
 
 func TestUnimplementedReturns501(t *testing.T) {
 	h := newHarness(t)
-	if code, body := h.do(http.MethodGet, "/v1/apps/demo/certificates", nil, nil); code != http.StatusNotImplemented {
-		t.Fatalf("certificates = %d %s, want 501", code, body)
+	if code, body := h.do(http.MethodPost, "/v1/apps/demo/machines/x/signal", nil, nil); code != http.StatusNotImplemented {
+		t.Fatalf("signal = %d %s, want 501", code, body)
 	}
 }
 
@@ -912,6 +912,80 @@ func TestSecretsApplyOnly(t *testing.T) {
 		t.Fatalf("delete version %d not greater than set version %d", del.Version, setResp.Version)
 	}
 	if code, _ := h.do(http.MethodGet, "/v1/apps/demo/secrets/DATABASE_URL", nil, nil); code != http.StatusNotFound {
+		t.Fatalf("get after delete = %d, want 404", code)
+	}
+}
+
+// TestIPAssignments covers the ip_assignments endpoints (breadth #21).
+func TestIPAssignments(t *testing.T) {
+	h := newHarness(t)
+	if code, body := h.do(http.MethodPost, "/v1/apps", flaps.CreateAppRequest{AppName: "demo"}, nil); code != http.StatusCreated {
+		t.Fatalf("create app = %d %s", code, body)
+	}
+	// shared v4
+	code, body := h.do(http.MethodPost, "/v1/apps/demo/ip_assignments", flaps.AssignIPRequest{Type: "shared_v4", Region: "global"}, nil)
+	if code != http.StatusOK {
+		t.Fatalf("assign shared_v4 = %d %s", code, body)
+	}
+	var ip flaps.IPAssignment
+	h.mustJSON(body, &ip)
+	if ip.IP == "" || !ip.Shared {
+		t.Fatalf("unexpected shared ip: %+v", ip)
+	}
+	// dedicated v6
+	_, body = h.do(http.MethodPost, "/v1/apps/demo/ip_assignments", flaps.AssignIPRequest{Type: "v6"}, nil)
+	h.mustJSON(body, &ip)
+	if ip.Shared {
+		t.Fatalf("v6 should not be shared: %+v", ip)
+	}
+	// list has 2
+	_, body = h.do(http.MethodGet, "/v1/apps/demo/ip_assignments", nil, nil)
+	var list flaps.ListIPAssignmentsResponse
+	h.mustJSON(body, &list)
+	if len(list.IPs) != 2 {
+		t.Fatalf("expected 2 ips, got %d", len(list.IPs))
+	}
+	// delete one
+	if code, _ := h.do(http.MethodDelete, "/v1/apps/demo/ip_assignments/"+ip.IP, nil, nil); code != http.StatusOK {
+		t.Fatalf("delete ip = %d", code)
+	}
+	if code, _ := h.do(http.MethodDelete, "/v1/apps/demo/ip_assignments/9.9.9.9", nil, nil); code != http.StatusNotFound {
+		t.Fatalf("delete missing ip = %d, want 404", code)
+	}
+}
+
+// TestCertificates covers the certificate endpoints (breadth #20).
+func TestCertificates(t *testing.T) {
+	h := newHarness(t)
+	if code, body := h.do(http.MethodPost, "/v1/apps", flaps.CreateAppRequest{AppName: "demo"}, nil); code != http.StatusCreated {
+		t.Fatalf("create app = %d %s", code, body)
+	}
+	// create
+	code, body := h.do(http.MethodPost, "/v1/apps/demo/certificates", flaps.CreateCertificateRequest{Hostname: "example.com"}, nil)
+	if code != http.StatusOK {
+		t.Fatalf("create cert = %d %s", code, body)
+	}
+	var cert flaps.CertificateDetailResponse
+	h.mustJSON(body, &cert)
+	if cert.Hostname != "example.com" || cert.Status == "" || cert.Configured {
+		t.Fatalf("unexpected cert: %+v", cert)
+	}
+	// get
+	if code, body := h.do(http.MethodGet, "/v1/apps/demo/certificates/example.com", nil, nil); code != http.StatusOK {
+		t.Fatalf("get cert = %d %s", code, body)
+	}
+	// list
+	_, body = h.do(http.MethodGet, "/v1/apps/demo/certificates", nil, nil)
+	var list flaps.ListCertificatesResponse
+	h.mustJSON(body, &list)
+	if len(list.Certificates) != 1 || list.Certificates[0].Hostname != "example.com" {
+		t.Fatalf("unexpected cert list: %+v", list)
+	}
+	// delete
+	if code, _ := h.do(http.MethodDelete, "/v1/apps/demo/certificates/example.com", nil, nil); code != http.StatusOK {
+		t.Fatalf("delete cert = %d", code)
+	}
+	if code, _ := h.do(http.MethodGet, "/v1/apps/demo/certificates/example.com", nil, nil); code != http.StatusNotFound {
 		t.Fatalf("get after delete = %d, want 404", code)
 	}
 }

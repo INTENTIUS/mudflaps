@@ -17,6 +17,8 @@ var (
 	ErrMachineNotFound = errors.New("machine not found")
 	ErrVolumeNotFound  = errors.New("volume not found")
 	ErrSecretNotFound  = errors.New("secret not found")
+	ErrIPNotFound      = errors.New("ip assignment not found")
+	ErrCertNotFound    = errors.New("certificate not found")
 )
 
 // Store holds apps and their machines.
@@ -31,6 +33,8 @@ type appEntry struct {
 	volumes    map[string]*flaps.Volume
 	secrets    map[string]*flaps.AppSecret
 	secretsVer uint64
+	ips        map[string]*flaps.IPAssignment
+	certs      map[string]*flaps.CertificateDetailResponse
 }
 
 // New returns an empty store.
@@ -53,6 +57,8 @@ func (s *Store) CreateApp(app flaps.App) (flaps.App, error) {
 		machines: make(map[string]*flaps.Machine),
 		volumes:  make(map[string]*flaps.Volume),
 		secrets:  make(map[string]*flaps.AppSecret),
+		ips:      make(map[string]*flaps.IPAssignment),
+		certs:    make(map[string]*flaps.CertificateDetailResponse),
 	}
 	return app, nil
 }
@@ -408,4 +414,109 @@ func cloneSecret(sec *flaps.AppSecret) *flaps.AppSecret {
 	}
 	c.Value = nil // apply-only: never surface a value
 	return &c
+}
+
+// ---- ip assignments ----
+
+// AssignIP stores an IP assignment (keyed by IP).
+func (s *Store) AssignIP(app string, ip flaps.IPAssignment) (flaps.IPAssignment, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e, ok := s.apps[app]
+	if !ok {
+		return flaps.IPAssignment{}, ErrAppNotFound
+	}
+	stored := ip
+	e.ips[ip.IP] = &stored
+	return stored, nil
+}
+
+// ListIPs returns every IP assignment for an app.
+func (s *Store) ListIPs(app string) ([]flaps.IPAssignment, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	e, ok := s.apps[app]
+	if !ok {
+		return nil, ErrAppNotFound
+	}
+	out := make([]flaps.IPAssignment, 0, len(e.ips))
+	for _, ip := range e.ips {
+		out = append(out, *ip)
+	}
+	return out, nil
+}
+
+// DeleteIP removes an IP assignment.
+func (s *Store) DeleteIP(app, ip string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e, ok := s.apps[app]
+	if !ok {
+		return ErrAppNotFound
+	}
+	if _, ok := e.ips[ip]; !ok {
+		return ErrIPNotFound
+	}
+	delete(e.ips, ip)
+	return nil
+}
+
+// ---- certificates ----
+
+// SetCertificate stores (or replaces) a certificate, keyed by hostname.
+func (s *Store) SetCertificate(app string, cert flaps.CertificateDetailResponse) (flaps.CertificateDetailResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e, ok := s.apps[app]
+	if !ok {
+		return flaps.CertificateDetailResponse{}, ErrAppNotFound
+	}
+	stored := cert
+	e.certs[cert.Hostname] = &stored
+	return stored, nil
+}
+
+// GetCertificate returns a certificate by hostname.
+func (s *Store) GetCertificate(app, hostname string) (flaps.CertificateDetailResponse, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	e, ok := s.apps[app]
+	if !ok {
+		return flaps.CertificateDetailResponse{}, ErrAppNotFound
+	}
+	c, ok := e.certs[hostname]
+	if !ok {
+		return flaps.CertificateDetailResponse{}, ErrCertNotFound
+	}
+	return *c, nil
+}
+
+// ListCertificates returns every certificate for an app.
+func (s *Store) ListCertificates(app string) ([]flaps.CertificateDetailResponse, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	e, ok := s.apps[app]
+	if !ok {
+		return nil, ErrAppNotFound
+	}
+	out := make([]flaps.CertificateDetailResponse, 0, len(e.certs))
+	for _, c := range e.certs {
+		out = append(out, *c)
+	}
+	return out, nil
+}
+
+// DeleteCertificate removes a certificate by hostname.
+func (s *Store) DeleteCertificate(app, hostname string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e, ok := s.apps[app]
+	if !ok {
+		return ErrAppNotFound
+	}
+	if _, ok := e.certs[hostname]; !ok {
+		return ErrCertNotFound
+	}
+	delete(e.certs, hostname)
+	return nil
 }

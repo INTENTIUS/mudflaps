@@ -62,12 +62,17 @@ var implementedPaths = []string{
 	"GET /v1/apps/{app}/secrets/{name}",
 	"POST /v1/apps/{app}/secrets/{name}",
 	"DELETE /v1/apps/{app}/secrets/{name}",
+	"GET /v1/apps/{app}/ip_assignments",
+	"POST /v1/apps/{app}/ip_assignments",
+	"DELETE /v1/apps/{app}/ip_assignments/{ip}",
+	"GET /v1/apps/{app}/certificates",
+	"POST /v1/apps/{app}/certificates",
+	"GET /v1/apps/{app}/certificates/{hostname}",
+	"DELETE /v1/apps/{app}/certificates/{hostname}",
 	"GET /v1/platform/regions",
 }
 
 var unimplementedPaths = []string{
-	"/v1/apps/{app}/certificates",
-	"/v1/apps/{app}/ip_assignments",
 	"/v1/apps/{app}/machines/{id}/signal",
 	"/v1/apps/{app}/machines/{id}/exec",
 	"/v1/apps/{app}/machines/{id}/ps",
@@ -167,6 +172,15 @@ func (s *Server) routes() {
 	mux.HandleFunc("GET /v1/apps/{app}/secrets/{name}", s.getSecret)
 	mux.HandleFunc("POST /v1/apps/{app}/secrets/{name}", s.setSecret)
 	mux.HandleFunc("DELETE /v1/apps/{app}/secrets/{name}", s.deleteSecret)
+
+	mux.HandleFunc("GET /v1/apps/{app}/ip_assignments", s.listIPs)
+	mux.HandleFunc("POST /v1/apps/{app}/ip_assignments", s.assignIP)
+	mux.HandleFunc("DELETE /v1/apps/{app}/ip_assignments/{ip}", s.deleteIP)
+
+	mux.HandleFunc("GET /v1/apps/{app}/certificates", s.listCertificates)
+	mux.HandleFunc("POST /v1/apps/{app}/certificates", s.createCertificate)
+	mux.HandleFunc("GET /v1/apps/{app}/certificates/{hostname}", s.getCertificate)
+	mux.HandleFunc("DELETE /v1/apps/{app}/certificates/{hostname}", s.deleteCertificate)
 
 	mux.HandleFunc("GET /v1/platform/regions", s.platformRegions)
 

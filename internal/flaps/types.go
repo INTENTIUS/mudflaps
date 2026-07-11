@@ -185,6 +185,56 @@ type MachineStartResponse struct {
 	PreviousState string `json:"previous_state,omitempty"`
 }
 
+// IPAssignment is an allocated IP address. Fields mirror fly-go; created_at is
+// a string here (marshals to the same RFC3339 a time.Time would).
+type IPAssignment struct {
+	IP          string `json:"ip"`
+	Region      string `json:"region"`
+	ServiceName string `json:"service_name"`
+	Shared      bool   `json:"shared"`
+	CreatedAt   string `json:"created_at"`
+}
+
+// ListIPAssignmentsResponse is the GET .../ip_assignments response.
+type ListIPAssignmentsResponse struct {
+	IPs []IPAssignment `json:"ips"`
+}
+
+// AssignIPRequest is the body of POST .../ip_assignments.
+type AssignIPRequest struct {
+	Type         string `json:"type"`
+	Region       string `json:"region"`
+	Organization string `json:"org_slug"`
+	Network      string `json:"network"`
+	ServiceName  string `json:"service_name"`
+}
+
+// CreateCertificateRequest is the body of POST .../certificates.
+type CreateCertificateRequest struct {
+	Hostname string `json:"hostname"`
+}
+
+// CertificateSummary is one entry in the certificates list.
+type CertificateSummary struct {
+	Hostname string `json:"hostname"`
+	Status   string `json:"status"`
+}
+
+// ListCertificatesResponse is the GET .../certificates response.
+type ListCertificatesResponse struct {
+	Certificates []CertificateSummary `json:"certificates"`
+	TotalCount   int                  `json:"total_count,omitempty"`
+}
+
+// CertificateDetailResponse is the GET/POST .../certificates[/{hostname}]
+// response. mudflaps models the shape, not real ACME issuance.
+type CertificateDetailResponse struct {
+	Hostname      string `json:"hostname"`
+	Configured    bool   `json:"configured"`
+	AcmeRequested bool   `json:"acme_requested"`
+	Status        string `json:"status"`
+}
+
 // AppSecret is a secret's metadata. mudflaps is apply-only: it stores a digest,
 // never the value, so `value` is always null on read.
 type AppSecret struct {

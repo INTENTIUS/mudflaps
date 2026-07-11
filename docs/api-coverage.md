@@ -1,8 +1,8 @@
 # API coverage
 
 mudflaps implements the subset of flaps that an infrastructure-as-code applier
-exercises: apps, machines (full lifecycle), metadata, wait, leases, volumes, and
-secrets (apply-only).
+exercises: apps, machines (full lifecycle), metadata, wait, leases, volumes,
+secrets (apply-only), IP assignments, and certificates.
 Endpoints that are not yet built answer `501 Not Implemented` with a clear JSON
 error rather than a misleading success, and they are listed under
 `unimplemented` in the `/_mudflaps/health` payload.
@@ -42,6 +42,13 @@ error rather than a misleading success, and they are listed under
 | GET | `/v1/apps/{app}/secrets/{name}` | Get a secret's metadata (never its value). |
 | POST | `/v1/apps/{app}/secrets/{name}` | Set a secret (apply-only; stores a digest). |
 | DELETE | `/v1/apps/{app}/secrets/{name}` | Delete a secret. |
+| GET | `/v1/apps/{app}/ip_assignments` | List allocated IPs. |
+| POST | `/v1/apps/{app}/ip_assignments` | Allocate an IP. |
+| DELETE | `/v1/apps/{app}/ip_assignments/{ip}` | Release an IP. |
+| GET | `/v1/apps/{app}/certificates` | List certificates. |
+| POST | `/v1/apps/{app}/certificates` | Add a certificate (shape only; no real ACME). |
+| GET | `/v1/apps/{app}/certificates/{hostname}` | Get a certificate. |
+| DELETE | `/v1/apps/{app}/certificates/{hostname}` | Delete a certificate. |
 | GET | `/v1/platform/regions` | List Fly regions (a static, representative set). |
 | GET | `/_mudflaps/health` | Version and coverage report (mudflaps-only). |
 
@@ -49,8 +56,6 @@ error rather than a misleading success, and they are listed under
 
 | Path | Area |
 | --- | --- |
-| `/v1/apps/{app}/certificates` | Certificates |
-| `/v1/apps/{app}/ip_assignments` | IP assignments |
 | `/v1/apps/{app}/machines/{id}/signal` | Send a signal |
 | `/v1/apps/{app}/machines/{id}/exec` | Exec in a machine |
 | `/v1/apps/{app}/machines/{id}/ps` | List processes |
