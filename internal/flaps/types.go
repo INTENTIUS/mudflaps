@@ -64,8 +64,9 @@ type Machine struct {
 	Versions []MachineVersion `json:"-"`
 
 	// Cordoned tracks whether the machine is cordoned (excluded from proxy
-	// routing). Internal bookkeeping — real networking isn't modeled.
-	Cordoned bool `json:"-"`
+	// routing). Surfaced to match fly-go's Machine, which emits `cordoned`;
+	// real networking isn't modeled.
+	Cordoned bool `json:"cordoned"`
 }
 
 // MachineVersion is one entry in a machine's instance-ID history.

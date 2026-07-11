@@ -60,6 +60,9 @@ var unimplementedPaths = []string{
 	"/v1/apps/{app}/secrets",
 	"/v1/apps/{app}/certificates",
 	"/v1/apps/{app}/ip_assignments",
+	"/v1/apps/{app}/machines/{id}/signal",
+	"/v1/apps/{app}/machines/{id}/exec",
+	"/v1/apps/{app}/machines/{id}/ps",
 }
 
 // Options configures a Server.

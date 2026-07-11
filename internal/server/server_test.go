@@ -631,6 +631,55 @@ func TestUnimplementedReturns501(t *testing.T) {
 	}
 }
 
+// TestCordonSurfacedOnMachine is the regression for audit M4: cordon status is
+// readable on the machine object.
+func TestCordonSurfacedOnMachine(t *testing.T) {
+	h := newHarness(t)
+	m := h.createStartedMachine("demo")
+
+	if code, body := h.do(http.MethodPost, "/v1/apps/demo/machines/"+m.ID+"/cordon", nil, nil); code != http.StatusOK {
+		t.Fatalf("cordon = %d %s", code, body)
+	}
+	_, body := h.do(http.MethodGet, "/v1/apps/demo/machines/"+m.ID, nil, nil)
+	var got flaps.Machine
+	h.mustJSON(body, &got)
+	if !got.Cordoned {
+		t.Fatalf("machine cordoned = false after cordon, want true: %s", body)
+	}
+	if code, _ := h.do(http.MethodPost, "/v1/apps/demo/machines/"+m.ID+"/uncordon", nil, nil); code != http.StatusOK {
+		t.Fatalf("uncordon = %d", code)
+	}
+	_, body = h.do(http.MethodGet, "/v1/apps/demo/machines/"+m.ID, nil, nil)
+	h.mustJSON(body, &got)
+	if got.Cordoned {
+		t.Fatalf("machine cordoned = true after uncordon, want false")
+	}
+}
+
+// TestSignalExecPsReturn501 is the regression for audit M6: fly-go's
+// signal/exec/ps answer an honest 501 and appear in health coverage.
+func TestSignalExecPsReturn501(t *testing.T) {
+	h := newHarness(t)
+	m := h.createStartedMachine("demo")
+	base := "/v1/apps/demo/machines/" + m.ID
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodPost, base + "/signal"},
+		{http.MethodPost, base + "/exec"},
+		{http.MethodGet, base + "/ps"},
+	} {
+		if code, body := h.do(tc.method, tc.path, nil, nil); code != http.StatusNotImplemented {
+			t.Fatalf("%s %s = %d %s, want 501", tc.method, tc.path, code, body)
+		}
+	}
+	// They must be disclosed in the health coverage list.
+	_, body := h.do(http.MethodGet, "/_mudflaps/health", nil, nil)
+	for _, want := range []string{"signal", "exec", "ps"} {
+		if !strings.Contains(string(body), "/"+want) {
+			t.Fatalf("health unimplemented missing %q: %s", want, body)
+		}
+	}
+}
+
 func TestNotFoundPaths(t *testing.T) {
 	h := newHarness(t)
 	if code, _ := h.do(http.MethodGet, "/v1/apps/nope", nil, nil); code != http.StatusNotFound {
