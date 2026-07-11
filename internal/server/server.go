@@ -41,6 +41,7 @@ var implementedPaths = []string{
 	"POST /v1/apps/{app}/machines/{id}/start",
 	"POST /v1/apps/{app}/machines/{id}/stop",
 	"POST /v1/apps/{app}/machines/{id}/restart",
+	"POST /v1/apps/{app}/machines/{id}/suspend",
 	"GET /v1/apps/{app}/machines/{id}/wait",
 	"GET /v1/apps/{app}/machines/{id}/lease",
 	"POST /v1/apps/{app}/machines/{id}/lease",
@@ -126,6 +127,7 @@ func (s *Server) routes() {
 	mux.HandleFunc("POST /v1/apps/{app}/machines/{id}/start", s.startMachine)
 	mux.HandleFunc("POST /v1/apps/{app}/machines/{id}/stop", s.stopMachine)
 	mux.HandleFunc("POST /v1/apps/{app}/machines/{id}/restart", s.restartMachine)
+	mux.HandleFunc("POST /v1/apps/{app}/machines/{id}/suspend", s.suspendMachine)
 	mux.HandleFunc("GET /v1/apps/{app}/machines/{id}/wait", s.waitMachine)
 
 	mux.HandleFunc("GET /v1/apps/{app}/machines/{id}/lease", s.getLease)
@@ -315,6 +317,12 @@ func (s *Server) stopMachine(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) restartMachine(w http.ResponseWriter, r *http.Request) {
 	s.transition(w, r, flaps.StateRestarting, s.advancer.Restart)
+}
+
+// suspendMachine moves a machine suspending -> suspended. Resume is a normal
+// start.
+func (s *Server) suspendMachine(w http.ResponseWriter, r *http.Request) {
+	s.transition(w, r, flaps.StateSuspending, s.advancer.Suspend)
 }
 
 // transition sets a transient state then schedules the advance to rest.

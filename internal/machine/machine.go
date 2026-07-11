@@ -24,6 +24,7 @@ type Delays struct {
 	Restart time.Duration
 	Destroy time.Duration
 	Update  time.Duration
+	Suspend time.Duration
 }
 
 // DefaultDelays are modest real-time delays used by the running server.
@@ -35,6 +36,7 @@ func DefaultDelays() Delays {
 		Restart: 75 * time.Millisecond,
 		Destroy: 75 * time.Millisecond,
 		Update:  75 * time.Millisecond,
+		Suspend: 75 * time.Millisecond,
 	}
 }
 
@@ -84,6 +86,13 @@ func (a *Advancer) Stop(app, machineID string) {
 func (a *Advancer) Restart(app, machineID string) {
 	a.clk.AfterFunc(a.delays.Restart, func() {
 		a.set(app, machineID, flaps.StateStarted)
+	})
+}
+
+// Suspend moves a machine suspending -> suspended. Resume is a normal Start.
+func (a *Advancer) Suspend(app, machineID string) {
+	a.clk.AfterFunc(a.delays.Suspend, func() {
+		a.set(app, machineID, flaps.StateSuspended)
 	})
 }
 
