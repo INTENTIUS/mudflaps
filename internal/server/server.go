@@ -53,6 +53,7 @@ var implementedPaths = []string{
 	"GET /v1/apps/{app}/machines/{id}/lease",
 	"POST /v1/apps/{app}/machines/{id}/lease",
 	"DELETE /v1/apps/{app}/machines/{id}/lease",
+	"GET /v1/platform/regions",
 }
 
 var unimplementedPaths = []string{
@@ -148,6 +149,8 @@ func (s *Server) routes() {
 	mux.HandleFunc("GET /v1/apps/{app}/machines/{id}/lease", s.getLease)
 	mux.HandleFunc("POST /v1/apps/{app}/machines/{id}/lease", s.acquireLease)
 	mux.HandleFunc("DELETE /v1/apps/{app}/machines/{id}/lease", s.releaseLease)
+
+	mux.HandleFunc("GET /v1/platform/regions", s.platformRegions)
 
 	mux.HandleFunc("GET /_mudflaps/health", s.health)
 
@@ -620,6 +623,12 @@ func (s *Server) releaseLease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, flaps.MachineLease{Status: "released"})
+}
+
+// ---- platform ----
+
+func (s *Server) platformRegions(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, flaps.RegionData{Regions: flyRegions, Nearest: "iad"})
 }
 
 // ---- meta ----

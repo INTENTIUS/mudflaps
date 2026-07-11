@@ -32,6 +32,7 @@ error rather than a misleading success, and they are listed under
 | GET | `/v1/apps/{app}/machines/{id}/lease` | Read the active lease. |
 | POST | `/v1/apps/{app}/machines/{id}/lease` | Acquire or refresh a lease. |
 | DELETE | `/v1/apps/{app}/machines/{id}/lease` | Release a lease. |
+| GET | `/v1/platform/regions` | List Fly regions (a static, representative set). |
 | GET | `/_mudflaps/health` | Version and coverage report (mudflaps-only). |
 
 ## Roadmap (currently `501`)
