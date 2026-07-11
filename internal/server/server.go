@@ -256,7 +256,7 @@ func (s *Server) createMachine(w http.ResponseWriter, r *http.Request) {
 	if !req.SkipLaunch {
 		s.advancer.Create(app, created.ID)
 	}
-	writeJSON(w, http.StatusCreated, created)
+	writeJSON(w, http.StatusOK, created)
 }
 
 func (s *Server) listMachines(w http.ResponseWriter, r *http.Request) {
@@ -338,11 +338,15 @@ func (s *Server) deleteMachine(w http.ResponseWriter, r *http.Request) {
 	s.leases.Clear(leaseKey(app, mID))
 	s.touch(app, mID)
 	s.advancer.Destroy(app, mID)
-	writeJSON(w, http.StatusOK, flaps.WaitResponse{OK: true})
+	writeJSON(w, http.StatusOK, struct{}{})
 }
 
 func (s *Server) startMachine(w http.ResponseWriter, r *http.Request) {
-	s.transition(w, r, flaps.StateStarting, s.advancer.Start)
+	// Start returns a MachineStartResponse (with the previous state), matching
+	// fly-go/flaps.
+	if prev, ok := s.transition(w, r, flaps.StateStarting, s.advancer.Start); ok {
+		writeJSON(w, http.StatusOK, flaps.MachineStartResponse{Status: "ok", PreviousState: string(prev)})
+	}
 }
 
 func (s *Server) stopMachine(w http.ResponseWriter, r *http.Request) {
@@ -353,19 +357,25 @@ func (s *Server) stopMachine(w http.ResponseWriter, r *http.Request) {
 	if r.ContentLength != 0 && !decodeJSON(w, r, &in) {
 		return
 	}
-	s.transition(w, r, flaps.StateStopping, s.advancer.Stop)
+	if _, ok := s.transition(w, r, flaps.StateStopping, s.advancer.Stop); ok {
+		writeJSON(w, http.StatusOK, struct{}{})
+	}
 }
 
 func (s *Server) restartMachine(w http.ResponseWriter, r *http.Request) {
 	// force_stop is accepted (mudflaps settles instantly regardless).
 	_ = r.URL.Query().Get("force_stop")
-	s.transition(w, r, flaps.StateRestarting, s.advancer.Restart)
+	if _, ok := s.transition(w, r, flaps.StateRestarting, s.advancer.Restart); ok {
+		writeJSON(w, http.StatusOK, struct{}{})
+	}
 }
 
 // suspendMachine moves a machine suspending -> suspended. Resume is a normal
 // start.
 func (s *Server) suspendMachine(w http.ResponseWriter, r *http.Request) {
-	s.transition(w, r, flaps.StateSuspending, s.advancer.Suspend)
+	if _, ok := s.transition(w, r, flaps.StateSuspending, s.advancer.Suspend); ok {
+		writeJSON(w, http.StatusOK, struct{}{})
+	}
 }
 
 // cordonMachine / uncordonMachine toggle the machine's cordon flag (excluded
@@ -394,28 +404,33 @@ func (s *Server) setCordon(w http.ResponseWriter, r *http.Request, cordoned bool
 		return
 	}
 	s.touch(app, mID)
-	writeJSON(w, http.StatusOK, flaps.WaitResponse{OK: true})
+	writeJSON(w, http.StatusOK, struct{}{})
 }
 
-// transition sets a transient state then schedules the advance to rest.
-func (s *Server) transition(w http.ResponseWriter, r *http.Request, transient flaps.MachineState, advance func(app, id string)) {
+// transition sets a transient state and schedules the advance to rest. It
+// returns the machine's previous state and whether it succeeded; on failure it
+// has already written the error response, and the caller writes the success
+// body (which differs per endpoint).
+func (s *Server) transition(w http.ResponseWriter, r *http.Request, transient flaps.MachineState, advance func(app, id string)) (flaps.MachineState, bool) {
 	app, mID := r.PathValue("app"), r.PathValue("id")
 	if s.rejectIfLeased(w, r, app, mID) {
-		return
+		return "", false
 	}
 	if s.rejectIfTerminal(w, app, mID) {
-		return
+		return "", false
 	}
+	var prev flaps.MachineState
 	_, err := s.store.UpdateMachine(app, mID, func(m *flaps.Machine) error {
+		prev = m.State
 		m.State = transient
 		return nil
 	})
 	if s.handleLookupError(w, err) {
-		return
+		return "", false
 	}
 	s.touch(app, mID)
 	advance(app, mID)
-	writeJSON(w, http.StatusOK, flaps.WaitResponse{OK: true})
+	return prev, true
 }
 
 // waitMachine blocks until the machine reaches the requested state or the
@@ -683,10 +698,9 @@ func leaseEnvelope(l *lease.Lease) flaps.MachineLease {
 	return flaps.MachineLease{
 		Status: "success",
 		Data: &flaps.MachineLeaseData{
-			Nonce:       l.Nonce,
-			ExpiresAt:   l.ExpiresAt.Unix(),
-			Owner:       l.Owner,
-			Description: l.Description,
+			Nonce:     l.Nonce,
+			ExpiresAt: l.ExpiresAt.Unix(),
+			Owner:     l.Owner,
 		},
 	}
 }
