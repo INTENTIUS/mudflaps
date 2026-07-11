@@ -16,6 +16,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   .../ip_assignments/{ip}`).
 - Certificate endpoints (`GET`/`POST /v1/apps/{app}/certificates`, `GET`/`DELETE
   .../certificates/{hostname}`); shape only, no real ACME issuance.
+- `GET /v1/apps/{app}/machines/{id}/versions` exposes a machine's instance-ID history.
+- Org-scoped listing: `GET /v1/orgs/{org}/machines` and `GET /v1/orgs/{org}/volumes`.
 - `GET /v1/platform/regions` returns a static, representative list of Fly regions
   (unblocks region validation for clients).
 

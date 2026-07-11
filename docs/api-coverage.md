@@ -27,6 +27,7 @@ error rather than a misleading success, and they are listed under
 | POST | `/v1/apps/{app}/machines/{id}/cordon` | Cordon a machine. |
 | POST | `/v1/apps/{app}/machines/{id}/uncordon` | Uncordon a machine. |
 | GET | `/v1/apps/{app}/machines/{id}/wait` | Block until a target state or `408`. |
+| GET | `/v1/apps/{app}/machines/{id}/versions` | The machine's instance-ID history. |
 | GET | `/v1/apps/{app}/machines/{id}/metadata` | Read machine metadata. |
 | POST | `/v1/apps/{app}/machines/{id}/metadata/{key}` | Set a metadata key. |
 | DELETE | `/v1/apps/{app}/machines/{id}/metadata/{key}` | Delete a metadata key. |
@@ -49,6 +50,8 @@ error rather than a misleading success, and they are listed under
 | POST | `/v1/apps/{app}/certificates` | Add a certificate (shape only; no real ACME). |
 | GET | `/v1/apps/{app}/certificates/{hostname}` | Get a certificate. |
 | DELETE | `/v1/apps/{app}/certificates/{hostname}` | Delete a certificate. |
+| GET | `/v1/orgs/{org}/machines` | List machines across the org's apps. |
+| GET | `/v1/orgs/{org}/volumes` | List volumes across the org's apps. |
 | GET | `/v1/platform/regions` | List Fly regions (a static, representative set). |
 | GET | `/_mudflaps/health` | Version and coverage report (mudflaps-only). |
 

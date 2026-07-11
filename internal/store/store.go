@@ -520,3 +520,43 @@ func (s *Store) DeleteCertificate(app, hostname string) error {
 	delete(e.certs, hostname)
 	return nil
 }
+
+// ---- org-scoped listing ----
+
+// ListMachinesByOrg flattens machines across every app owned by the org slug.
+func (s *Store) ListMachinesByOrg(org string) []flaps.Machine {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []flaps.Machine
+	for _, e := range s.apps {
+		if e.app.Organization != org {
+			continue
+		}
+		for _, m := range e.machines {
+			out = append(out, *cloneMachine(m))
+		}
+	}
+	if out == nil {
+		out = []flaps.Machine{}
+	}
+	return out
+}
+
+// ListVolumesByOrg flattens volumes across every app owned by the org slug.
+func (s *Store) ListVolumesByOrg(org string) []flaps.Volume {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []flaps.Volume
+	for _, e := range s.apps {
+		if e.app.Organization != org {
+			continue
+		}
+		for _, v := range e.volumes {
+			out = append(out, *cloneVolume(v))
+		}
+	}
+	if out == nil {
+		out = []flaps.Volume{}
+	}
+	return out
+}
