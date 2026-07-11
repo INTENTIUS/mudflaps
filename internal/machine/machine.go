@@ -96,10 +96,15 @@ func (a *Advancer) Suspend(app, machineID string) {
 	})
 }
 
-// Destroy moves a machine destroying -> destroyed.
+// Destroy reaps the machine: once the destroy delay elapses it is removed from
+// the store (real flaps does not keep a destroyed machine around to be
+// operated on). A `wait` for `destroyed` is satisfied by the machine being
+// gone; see the server's wait handler.
 func (a *Advancer) Destroy(app, machineID string) {
 	a.clk.AfterFunc(a.delays.Destroy, func() {
-		a.set(app, machineID, flaps.StateDestroyed)
+		if err := a.store.DeleteMachine(app, machineID); err != nil {
+			a.log.Debug("destroy reap skipped", "app", app, "machine", machineID, "err", err)
+		}
 	})
 }
 

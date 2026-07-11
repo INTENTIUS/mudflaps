@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -428,12 +429,79 @@ func TestStopAndRestartAcceptInputs(t *testing.T) {
 	m := h.createStartedMachine("demo")
 
 	if code, body := h.do(http.MethodPost, "/v1/apps/demo/machines/"+m.ID+"/stop",
-		flaps.StopMachineInput{Signal: "SIGTERM", Timeout: 30}, nil); code != http.StatusOK {
+		flaps.StopMachineInput{Signal: "SIGTERM", Timeout: "30s"}, nil); code != http.StatusOK {
 		t.Fatalf("stop with input = %d %s", code, body)
 	}
 	h.clk.Advance(time.Hour)
 	if code, body := h.do(http.MethodPost, "/v1/apps/demo/machines/"+m.ID+"/restart?force_stop=true", nil, nil); code != http.StatusOK {
 		t.Fatalf("restart force_stop = %d %s", code, body)
+	}
+}
+
+// TestStopAcceptsDurationStringTimeout is the regression for audit H1: fly-go
+// sends `timeout` as a duration string ("0s"), and stop must accept it, not 400.
+func TestStopAcceptsDurationStringTimeout(t *testing.T) {
+	h := newHarness(t)
+	m := h.createStartedMachine("demo")
+	// Raw JSON matching fly-go's exact StopMachineInput wire shape.
+	for _, body := range []string{`{"id":"x","timeout":"0s"}`, `{"timeout":"10s","signal":"SIGTERM"}`} {
+		req, _ := http.NewRequest(http.MethodPost, h.ts.URL+"/v1/apps/demo/machines/"+m.ID+"/stop", strings.NewReader(body))
+		resp, err := h.ts.Client().Do(req)
+		if err != nil {
+			t.Fatalf("stop request: %v", err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("stop %s -> %d, want 200", body, resp.StatusCode)
+		}
+	}
+}
+
+// TestSkipLaunchRestsInCreated is the regression for audit M1.
+func TestSkipLaunchRestsInCreated(t *testing.T) {
+	h := newHarness(t)
+	if code, body := h.do(http.MethodPost, "/v1/apps", flaps.CreateAppRequest{AppName: "demo"}, nil); code != http.StatusCreated {
+		t.Fatalf("create app = %d %s", code, body)
+	}
+	code, body := h.do(http.MethodPost, "/v1/apps/demo/machines",
+		flaps.CreateMachineRequest{Config: &flaps.MachineConfig{Image: "nginx"}, SkipLaunch: true}, nil)
+	if code != http.StatusCreated {
+		t.Fatalf("create = %d %s", code, body)
+	}
+	var m flaps.Machine
+	h.mustJSON(body, &m)
+	if m.State != flaps.StateCreated {
+		t.Fatalf("skip_launch state = %q, want created", m.State)
+	}
+	// Give the clock a shove; a skip_launch machine must not drift to started.
+	h.clk.Advance(time.Hour)
+	_, body = h.do(http.MethodGet, "/v1/apps/demo/machines/"+m.ID, nil, nil)
+	h.mustJSON(body, &m)
+	if m.State != flaps.StateCreated {
+		t.Fatalf("skip_launch state after advance = %q, want created", m.State)
+	}
+}
+
+// TestDestroyReapsAndBlocksResurrection is the regression for audit M2.
+func TestDestroyReapsAndBlocksResurrection(t *testing.T) {
+	h := newHarness(t)
+	m := h.createStartedMachine("demo")
+
+	if code, body := h.do(http.MethodDelete, "/v1/apps/demo/machines/"+m.ID, nil, nil); code != http.StatusOK {
+		t.Fatalf("destroy = %d %s", code, body)
+	}
+	// While destroying (before reap), a mutating op is rejected, not obeyed.
+	if code, body := h.do(http.MethodPost, "/v1/apps/demo/machines/"+m.ID+"/start", nil, nil); code != http.StatusBadRequest {
+		t.Fatalf("start while destroying = %d %s, want 400", code, body)
+	}
+	// After the destroy settles, the machine is reaped (gone).
+	h.clk.Advance(time.Hour)
+	if code, body := h.do(http.MethodGet, "/v1/apps/demo/machines/"+m.ID, nil, nil); code != http.StatusNotFound {
+		t.Fatalf("get after reap = %d %s, want 404", code, body)
+	}
+	// wait?state=destroyed is still satisfied by the machine being gone.
+	if code, body := h.do(http.MethodGet, "/v1/apps/demo/machines/"+m.ID+"/wait?state=destroyed&timeout=5", nil, nil); code != http.StatusOK {
+		t.Fatalf("wait destroyed after reap = %d %s", code, body)
 	}
 }
 

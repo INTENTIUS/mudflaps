@@ -214,17 +214,23 @@ func (s *Server) createMachine(w http.ResponseWriter, r *http.Request) {
 	}
 	now := s.clk.Now().UTC().Format(time.RFC3339Nano)
 	instance := id.Instance()
+	// A skip_launch machine is created but not booted, so it rests directly in
+	// `created` rather than the transient `creating` state.
+	initialState := flaps.StateCreating
+	if req.SkipLaunch {
+		initialState = flaps.StateCreated
+	}
 	m := flaps.Machine{
 		ID:         id.Machine(),
 		Name:       req.Name,
-		State:      flaps.StateCreating,
+		State:      initialState,
 		Region:     defaultString(req.Region, "local"),
 		InstanceID: instance,
 		PrivateIP:  "fdaa:0:0:a7b:0:1::",
 		Config:     req.Config,
 		CreatedAt:  now,
 		UpdatedAt:  now,
-		Versions:   []flaps.MachineVersion{{InstanceID: instance, State: flaps.StateCreating}},
+		Versions:   []flaps.MachineVersion{{InstanceID: instance, State: initialState}},
 	}
 	if m.Name == "" {
 		m.Name = "machine-" + m.ID
@@ -261,6 +267,9 @@ func (s *Server) getMachine(w http.ResponseWriter, r *http.Request) {
 func (s *Server) updateMachine(w http.ResponseWriter, r *http.Request) {
 	app, mID := r.PathValue("app"), r.PathValue("id")
 	if s.rejectIfLeased(w, r, app, mID) {
+		return
+	}
+	if s.rejectIfTerminal(w, app, mID) {
 		return
 	}
 	var req flaps.CreateMachineRequest
@@ -359,6 +368,9 @@ func (s *Server) setCordon(w http.ResponseWriter, r *http.Request, cordoned bool
 	if s.rejectIfLeased(w, r, app, mID) {
 		return
 	}
+	if s.rejectIfTerminal(w, app, mID) {
+		return
+	}
 	_, err := s.store.UpdateMachine(app, mID, func(m *flaps.Machine) error {
 		m.Cordoned = cordoned
 		return nil
@@ -374,6 +386,9 @@ func (s *Server) setCordon(w http.ResponseWriter, r *http.Request, cordoned bool
 func (s *Server) transition(w http.ResponseWriter, r *http.Request, transient flaps.MachineState, advance func(app, id string)) {
 	app, mID := r.PathValue("app"), r.PathValue("id")
 	if s.rejectIfLeased(w, r, app, mID) {
+		return
+	}
+	if s.rejectIfTerminal(w, app, mID) {
 		return
 	}
 	_, err := s.store.UpdateMachine(app, mID, func(m *flaps.Machine) error {
@@ -590,6 +605,21 @@ func (s *Server) notImplemented(w http.ResponseWriter, r *http.Request) {
 func (s *Server) rejectIfLeased(w http.ResponseWriter, r *http.Request, app, mID string) bool {
 	if err := s.leases.Check(leaseKey(app, mID), r.Header.Get(LeaseNonceHeader)); errors.Is(err, lease.ErrConflict) {
 		s.writeError(w, http.StatusConflict, "machine is leased; supply the "+LeaseNonceHeader+" header")
+		return true
+	}
+	return false
+}
+
+// rejectIfTerminal returns true (and has written a 400) when the machine is
+// being destroyed or has been destroyed, so a mutating op cannot resurrect it.
+// A missing machine is left to the caller's own lookup (which returns 404).
+func (s *Server) rejectIfTerminal(w http.ResponseWriter, app, mID string) bool {
+	m, err := s.store.GetMachine(app, mID)
+	if err != nil {
+		return false
+	}
+	if m.State == flaps.StateDestroying || m.State == flaps.StateDestroyed {
+		s.writeError(w, http.StatusBadRequest, "machine is "+string(m.State)+" and cannot be modified")
 		return true
 	}
 	return false
