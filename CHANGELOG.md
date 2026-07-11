@@ -10,6 +10,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Volume endpoints (`GET`/`POST /v1/apps/{app}/volumes`, `GET`/`PUT`/`DELETE
   /v1/apps/{app}/volumes/{vol}`).
+- Apply-only secret endpoints (`GET`/`POST`/`DELETE /v1/apps/{app}/secrets[/{name}]`);
+  mudflaps stores a digest, never the value.
 - `GET /v1/platform/regions` returns a static, representative list of Fly regions
   (unblocks region validation for clients).
 

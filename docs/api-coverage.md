@@ -1,7 +1,8 @@
 # API coverage
 
 mudflaps implements the subset of flaps that an infrastructure-as-code applier
-exercises: apps, machines (full lifecycle), metadata, wait, leases, and volumes.
+exercises: apps, machines (full lifecycle), metadata, wait, leases, volumes, and
+secrets (apply-only).
 Endpoints that are not yet built answer `501 Not Implemented` with a clear JSON
 error rather than a misleading success, and they are listed under
 `unimplemented` in the `/_mudflaps/health` payload.
@@ -37,6 +38,10 @@ error rather than a misleading success, and they are listed under
 | GET | `/v1/apps/{app}/volumes/{vol}` | Get a volume. |
 | PUT | `/v1/apps/{app}/volumes/{vol}` | Update a volume. |
 | DELETE | `/v1/apps/{app}/volumes/{vol}` | Delete a volume. |
+| GET | `/v1/apps/{app}/secrets` | List secrets (names + digests; never values). |
+| GET | `/v1/apps/{app}/secrets/{name}` | Get a secret's metadata (never its value). |
+| POST | `/v1/apps/{app}/secrets/{name}` | Set a secret (apply-only; stores a digest). |
+| DELETE | `/v1/apps/{app}/secrets/{name}` | Delete a secret. |
 | GET | `/v1/platform/regions` | List Fly regions (a static, representative set). |
 | GET | `/_mudflaps/health` | Version and coverage report (mudflaps-only). |
 
@@ -44,7 +49,6 @@ error rather than a misleading success, and they are listed under
 
 | Path | Area |
 | --- | --- |
-| `/v1/apps/{app}/secrets` | Secrets |
 | `/v1/apps/{app}/certificates` | Certificates |
 | `/v1/apps/{app}/ip_assignments` | IP assignments |
 | `/v1/apps/{app}/machines/{id}/signal` | Send a signal |

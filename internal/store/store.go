@@ -16,6 +16,7 @@ var (
 	ErrAppExists       = errors.New("app already exists")
 	ErrMachineNotFound = errors.New("machine not found")
 	ErrVolumeNotFound  = errors.New("volume not found")
+	ErrSecretNotFound  = errors.New("secret not found")
 )
 
 // Store holds apps and their machines.
@@ -25,9 +26,11 @@ type Store struct {
 }
 
 type appEntry struct {
-	app      flaps.App
-	machines map[string]*flaps.Machine
-	volumes  map[string]*flaps.Volume
+	app        flaps.App
+	machines   map[string]*flaps.Machine
+	volumes    map[string]*flaps.Volume
+	secrets    map[string]*flaps.AppSecret
+	secretsVer uint64
 }
 
 // New returns an empty store.
@@ -49,6 +52,7 @@ func (s *Store) CreateApp(app flaps.App) (flaps.App, error) {
 		app:      app,
 		machines: make(map[string]*flaps.Machine),
 		volumes:  make(map[string]*flaps.Volume),
+		secrets:  make(map[string]*flaps.AppSecret),
 	}
 	return app, nil
 }
@@ -322,5 +326,86 @@ func cloneVolume(v *flaps.Volume) *flaps.Volume {
 		am := *v.AttachedMachine
 		c.AttachedMachine = &am
 	}
+	return &c
+}
+
+// ---- secrets (apply-only: the store keeps a digest, never the value) ----
+
+// SetSecret records (or replaces) a secret's digest and bumps the app's secrets
+// version. It returns the stored metadata (never a value) and the new version.
+func (s *Store) SetSecret(app, name, digest, now string) (flaps.AppSecret, uint64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e, ok := s.apps[app]
+	if !ok {
+		return flaps.AppSecret{}, 0, ErrAppNotFound
+	}
+	created := now
+	if existing, ok := e.secrets[name]; ok && existing.CreatedAt != nil {
+		created = *existing.CreatedAt
+	}
+	sec := &flaps.AppSecret{Name: name, Digest: digest, CreatedAt: &created, UpdatedAt: &now}
+	e.secrets[name] = sec
+	e.secretsVer++
+	return *cloneSecret(sec), e.secretsVer, nil
+}
+
+// GetSecret returns a secret's metadata (never a value).
+func (s *Store) GetSecret(app, name string) (flaps.AppSecret, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	e, ok := s.apps[app]
+	if !ok {
+		return flaps.AppSecret{}, ErrAppNotFound
+	}
+	sec, ok := e.secrets[name]
+	if !ok {
+		return flaps.AppSecret{}, ErrSecretNotFound
+	}
+	return *cloneSecret(sec), nil
+}
+
+// ListSecrets returns every secret's metadata (never values).
+func (s *Store) ListSecrets(app string) ([]flaps.AppSecret, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	e, ok := s.apps[app]
+	if !ok {
+		return nil, ErrAppNotFound
+	}
+	out := make([]flaps.AppSecret, 0, len(e.secrets))
+	for _, sec := range e.secrets {
+		out = append(out, *cloneSecret(sec))
+	}
+	return out, nil
+}
+
+// DeleteSecret removes a secret and bumps the version, returning the new version.
+func (s *Store) DeleteSecret(app, name string) (uint64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e, ok := s.apps[app]
+	if !ok {
+		return 0, ErrAppNotFound
+	}
+	if _, ok := e.secrets[name]; !ok {
+		return 0, ErrSecretNotFound
+	}
+	delete(e.secrets, name)
+	e.secretsVer++
+	return e.secretsVer, nil
+}
+
+func cloneSecret(sec *flaps.AppSecret) *flaps.AppSecret {
+	c := *sec
+	if sec.CreatedAt != nil {
+		v := *sec.CreatedAt
+		c.CreatedAt = &v
+	}
+	if sec.UpdatedAt != nil {
+		v := *sec.UpdatedAt
+		c.UpdatedAt = &v
+	}
+	c.Value = nil // apply-only: never surface a value
 	return &c
 }
