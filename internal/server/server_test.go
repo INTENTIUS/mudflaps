@@ -475,7 +475,7 @@ func TestSkipLaunchRestsInCreated(t *testing.T) {
 	}
 	// Give the clock a shove; a skip_launch machine must not drift to started.
 	h.clk.Advance(time.Hour)
-	code, body = h.do(http.MethodGet, "/v1/apps/demo/machines/"+m.ID, nil, nil)
+	_, body = h.do(http.MethodGet, "/v1/apps/demo/machines/"+m.ID, nil, nil)
 	h.mustJSON(body, &m)
 	if m.State != flaps.StateCreated {
 		t.Fatalf("skip_launch state after advance = %q, want created", m.State)
