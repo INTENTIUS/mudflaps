@@ -287,6 +287,61 @@ func TestAcquireLeaseConflictReturnsHeldLease(t *testing.T) {
 	}
 }
 
+// TestSuspendAndResume covers the suspend lifecycle: started -> suspending ->
+// suspended, then resume via start -> started. It also checks the mutation is
+// lease-gated.
+func TestSuspendAndResume(t *testing.T) {
+	h := newHarness(t)
+	m := h.createStartedMachine("demo")
+
+	if code, body := h.do(http.MethodPost, "/v1/apps/demo/machines/"+m.ID+"/suspend", nil, nil); code != http.StatusOK {
+		t.Fatalf("suspend = %d %s", code, body)
+	}
+	h.clk.Advance(time.Hour)
+	if code, body := h.do(http.MethodGet,
+		"/v1/apps/demo/machines/"+m.ID+"/wait?state=suspended&timeout=5", nil, nil); code != http.StatusOK {
+		t.Fatalf("wait suspended = %d %s", code, body)
+	}
+
+	// Resume with a normal start.
+	if code, body := h.do(http.MethodPost, "/v1/apps/demo/machines/"+m.ID+"/start", nil, nil); code != http.StatusOK {
+		t.Fatalf("start (resume) = %d %s", code, body)
+	}
+	h.clk.Advance(time.Hour)
+	code, body := h.do(http.MethodGet, "/v1/apps/demo/machines/"+m.ID, nil, nil)
+	if code != http.StatusOK {
+		t.Fatalf("get after resume = %d %s", code, body)
+	}
+	var got flaps.Machine
+	h.mustJSON(body, &got)
+	if got.State != flaps.StateStarted {
+		t.Fatalf("state after resume = %q, want started", got.State)
+	}
+}
+
+// TestSuspendIsLeaseGated confirms suspend obeys an active lease.
+func TestSuspendIsLeaseGated(t *testing.T) {
+	h := newHarness(t)
+	m := h.createStartedMachine("demo")
+
+	code, body := h.do(http.MethodPost, "/v1/apps/demo/machines/"+m.ID+"/lease",
+		flaps.AcquireLeaseRequest{TTL: 30}, nil)
+	if code != http.StatusOK {
+		t.Fatalf("acquire lease = %d %s", code, body)
+	}
+	var env flaps.MachineLease
+	h.mustJSON(body, &env)
+	nonce := env.Data.Nonce
+
+	if code, body := h.do(http.MethodPost, "/v1/apps/demo/machines/"+m.ID+"/suspend", nil, nil); code != http.StatusConflict {
+		t.Fatalf("suspend without nonce = %d %s, want 409", code, body)
+	}
+	if code, body := h.do(http.MethodPost, "/v1/apps/demo/machines/"+m.ID+"/suspend", nil,
+		map[string]string{LeaseNonceHeader: nonce}); code != http.StatusOK {
+		t.Fatalf("suspend with nonce = %d %s", code, body)
+	}
+}
+
 func TestDestroyAndWaitDestroyed(t *testing.T) {
 	h := newHarness(t)
 	m := h.createStartedMachine("demo")
