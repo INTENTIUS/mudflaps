@@ -185,6 +185,37 @@ type MachineStartResponse struct {
 	PreviousState string `json:"previous_state,omitempty"`
 }
 
+// AppSecret is a secret's metadata. mudflaps is apply-only: it stores a digest,
+// never the value, so `value` is always null on read.
+type AppSecret struct {
+	Name      string  `json:"name"`
+	Value     *string `json:"value,omitempty"`
+	Digest    string  `json:"digest,omitempty"`
+	UpdatedAt *string `json:"updated_at,omitempty"`
+	CreatedAt *string `json:"created_at,omitempty"`
+}
+
+// ListAppSecretsResp is the GET .../secrets response.
+type ListAppSecretsResp struct {
+	Secrets []AppSecret `json:"secrets"`
+}
+
+// SetAppSecretRequest is the body of POST .../secrets/{name}.
+type SetAppSecretRequest struct {
+	Value string `json:"value"`
+}
+
+// SetAppSecretResp is the POST .../secrets/{name} response.
+type SetAppSecretResp struct {
+	AppSecret
+	Version uint64 `json:"version"`
+}
+
+// DeleteAppSecretResp is the DELETE .../secrets/{name} response.
+type DeleteAppSecretResp struct {
+	Version uint64 `json:"version"`
+}
+
 // Volume is a Fly volume. Field names mirror fly-go's Volume; created_at is a
 // string here (marshals to the same RFC3339 a time.Time would).
 type Volume struct {

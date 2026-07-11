@@ -626,8 +626,8 @@ func TestWaitTimesOut(t *testing.T) {
 
 func TestUnimplementedReturns501(t *testing.T) {
 	h := newHarness(t)
-	if code, body := h.do(http.MethodGet, "/v1/apps/demo/secrets", nil, nil); code != http.StatusNotImplemented {
-		t.Fatalf("secrets = %d %s, want 501", code, body)
+	if code, body := h.do(http.MethodGet, "/v1/apps/demo/certificates", nil, nil); code != http.StatusNotImplemented {
+		t.Fatalf("certificates = %d %s, want 501", code, body)
 	}
 }
 
@@ -868,6 +868,50 @@ func TestVolumeCRUD(t *testing.T) {
 		t.Fatalf("delete volume = %d %s", code, body)
 	}
 	if code, _ := h.do(http.MethodGet, "/v1/apps/demo/volumes/"+v.ID, nil, nil); code != http.StatusNotFound {
+		t.Fatalf("get after delete = %d, want 404", code)
+	}
+}
+
+// TestSecretsApplyOnly covers the secret endpoints (breadth #19): set/list/get/
+// delete, and the invariant that a value is never returned.
+func TestSecretsApplyOnly(t *testing.T) {
+	h := newHarness(t)
+	if code, body := h.do(http.MethodPost, "/v1/apps", flaps.CreateAppRequest{AppName: "demo"}, nil); code != http.StatusCreated {
+		t.Fatalf("create app = %d %s", code, body)
+	}
+	// set
+	code, body := h.do(http.MethodPost, "/v1/apps/demo/secrets/DATABASE_URL",
+		flaps.SetAppSecretRequest{Value: "postgres://secret"}, nil)
+	if code != http.StatusOK {
+		t.Fatalf("set secret = %d %s", code, body)
+	}
+	var setResp flaps.SetAppSecretResp
+	h.mustJSON(body, &setResp)
+	if setResp.Name != "DATABASE_URL" || setResp.Digest == "" || setResp.Version == 0 {
+		t.Fatalf("unexpected set response: %+v", setResp)
+	}
+	// the value must never appear in any response
+	for _, path := range []string{"/v1/apps/demo/secrets", "/v1/apps/demo/secrets/DATABASE_URL"} {
+		_, b := h.do(http.MethodGet, path, nil, nil)
+		if strings.Contains(string(b), "postgres://secret") {
+			t.Fatalf("secret value leaked in %s: %s", path, b)
+		}
+	}
+	// list shows the name + digest
+	_, body = h.do(http.MethodGet, "/v1/apps/demo/secrets", nil, nil)
+	var list flaps.ListAppSecretsResp
+	h.mustJSON(body, &list)
+	if len(list.Secrets) != 1 || list.Secrets[0].Name != "DATABASE_URL" || list.Secrets[0].Value != nil {
+		t.Fatalf("unexpected list: %+v", list)
+	}
+	// delete bumps the version
+	_, body = h.do(http.MethodDelete, "/v1/apps/demo/secrets/DATABASE_URL", nil, nil)
+	var del flaps.DeleteAppSecretResp
+	h.mustJSON(body, &del)
+	if del.Version <= setResp.Version {
+		t.Fatalf("delete version %d not greater than set version %d", del.Version, setResp.Version)
+	}
+	if code, _ := h.do(http.MethodGet, "/v1/apps/demo/secrets/DATABASE_URL", nil, nil); code != http.StatusNotFound {
 		t.Fatalf("get after delete = %d, want 404", code)
 	}
 }

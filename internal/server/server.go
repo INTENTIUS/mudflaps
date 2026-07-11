@@ -58,11 +58,14 @@ var implementedPaths = []string{
 	"GET /v1/apps/{app}/volumes/{vol}",
 	"PUT /v1/apps/{app}/volumes/{vol}",
 	"DELETE /v1/apps/{app}/volumes/{vol}",
+	"GET /v1/apps/{app}/secrets",
+	"GET /v1/apps/{app}/secrets/{name}",
+	"POST /v1/apps/{app}/secrets/{name}",
+	"DELETE /v1/apps/{app}/secrets/{name}",
 	"GET /v1/platform/regions",
 }
 
 var unimplementedPaths = []string{
-	"/v1/apps/{app}/secrets",
 	"/v1/apps/{app}/certificates",
 	"/v1/apps/{app}/ip_assignments",
 	"/v1/apps/{app}/machines/{id}/signal",
@@ -159,6 +162,11 @@ func (s *Server) routes() {
 	mux.HandleFunc("GET /v1/apps/{app}/volumes/{vol}", s.getVolume)
 	mux.HandleFunc("PUT /v1/apps/{app}/volumes/{vol}", s.updateVolume)
 	mux.HandleFunc("DELETE /v1/apps/{app}/volumes/{vol}", s.deleteVolume)
+
+	mux.HandleFunc("GET /v1/apps/{app}/secrets", s.listSecrets)
+	mux.HandleFunc("GET /v1/apps/{app}/secrets/{name}", s.getSecret)
+	mux.HandleFunc("POST /v1/apps/{app}/secrets/{name}", s.setSecret)
+	mux.HandleFunc("DELETE /v1/apps/{app}/secrets/{name}", s.deleteSecret)
 
 	mux.HandleFunc("GET /v1/platform/regions", s.platformRegions)
 
