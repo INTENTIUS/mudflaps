@@ -505,6 +505,63 @@ func TestDestroyReapsAndBlocksResurrection(t *testing.T) {
 	}
 }
 
+// TestWaitHonorsVersionFilter is the regression for audit M3 (version filter):
+// fly-go scopes a wait with `version`, which must match the machine's current
+// instance_id; a stale version must not match.
+func TestWaitHonorsVersionFilter(t *testing.T) {
+	h := newHarness(t)
+	m := h.createStartedMachine("demo")
+
+	// A wait keyed to the current version succeeds immediately.
+	if code, body := h.do(http.MethodGet,
+		"/v1/apps/demo/machines/"+m.ID+"/wait?state=started&version="+m.InstanceID+"&timeout=5", nil, nil); code != http.StatusOK {
+		t.Fatalf("wait current version = %d %s", code, body)
+	}
+	// A wait keyed to a stale version times out (never matches the current one).
+	done := make(chan int, 1)
+	go func() {
+		c, _ := h.do(http.MethodGet, "/v1/apps/demo/machines/"+m.ID+"/wait?state=started&version=STALE&timeout=1", nil, nil)
+		done <- c
+	}()
+	safety := time.After(3 * time.Second)
+	for {
+		select {
+		case c := <-done:
+			if c != http.StatusRequestTimeout {
+				t.Fatalf("stale-version wait = %d, want 408", c)
+			}
+			return
+		case <-safety:
+			t.Fatal("stale-version wait did not time out")
+		default:
+			h.clk.Advance(500 * time.Millisecond)
+			time.Sleep(2 * time.Millisecond)
+		}
+	}
+}
+
+// TestWaitHonorsRepeatableState is the regression for audit M3 (repeatable
+// state, folding in #23): any of several requested states satisfies the wait.
+func TestWaitHonorsRepeatableState(t *testing.T) {
+	h := newHarness(t)
+	m := h.createStartedMachine("demo")
+
+	// Machine is started; a wait for stopped OR started matches immediately.
+	if code, body := h.do(http.MethodGet,
+		"/v1/apps/demo/machines/"+m.ID+"/wait?state=stopped&state=started&timeout=5", nil, nil); code != http.StatusOK {
+		t.Fatalf("multi-state wait (started present) = %d %s", code, body)
+	}
+	// Stop it, then a wait for stopped OR suspended matches once stopped.
+	if code, body := h.do(http.MethodPost, "/v1/apps/demo/machines/"+m.ID+"/stop", nil, nil); code != http.StatusOK {
+		t.Fatalf("stop = %d %s", code, body)
+	}
+	h.clk.Advance(time.Hour)
+	if code, body := h.do(http.MethodGet,
+		"/v1/apps/demo/machines/"+m.ID+"/wait?state=stopped&state=suspended&timeout=5", nil, nil); code != http.StatusOK {
+		t.Fatalf("multi-state wait (stopped) = %d %s", code, body)
+	}
+}
+
 func TestDestroyAndWaitDestroyed(t *testing.T) {
 	h := newHarness(t)
 	m := h.createStartedMachine("demo")
