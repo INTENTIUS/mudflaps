@@ -6,6 +6,36 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-10
+
+Fidelity and correctness pass from an adversarial audit against `superfly/fly-go`.
+
+### Fixed
+
+- `stop` accepts `timeout` as a duration string (`"0s"`/`"10s"`), matching
+  fly-go, instead of rejecting every real client's stop body with `400`.
+- `skip_launch` machines rest in `created` rather than the transient `creating`.
+- Destroyed machines are reaped from the store, and mutating operations on a
+  destroying/destroyed machine are rejected (`400`) instead of resurrecting it.
+- `cloneMachine` deep-copies nested service ports/handlers; `clampTimeout` clamps
+  non-positive/garbage values to the 1s floor; the update response carries a
+  fresh `updated_at`.
+- App deletion clears its machines' leases; graceful shutdown cancels in-flight
+  `/wait` long-polls so it drains promptly and exits cleanly.
+
+### Changed
+
+- `/wait` honors fly-go's `version` filter and a repeatable `state` param (any
+  requested state satisfies the wait); `instance_id` still accepted.
+- `cordoned` is surfaced on the machine object (`json:"cordoned"`).
+- `signal`, `exec`, and `ps` answer an honest `501` and appear in
+  `/_mudflaps/health` instead of falling through to a bare `404`.
+- Response shapes match flaps: create-machine returns `200`, `start` returns a
+  `MachineStartResponse`, and stop/restart/suspend/cordon/delete return an empty
+  body; the non-fly-go `description` field is dropped from lease data.
+- Documentation site (`api-coverage`, `fidelity`) synced with the implemented
+  surface; added a `RELEASING.md` and a `just release` recipe.
+
 ## [0.1.0] - 2026-07-10
 
 ### Added
@@ -37,5 +67,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Distroless container image, GoReleaser configuration, mkdocs-material doc site,
   and CI.
 
-[Unreleased]: https://github.com/intentius/mudflaps/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/intentius/mudflaps/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/intentius/mudflaps/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/intentius/mudflaps/releases/tag/v0.1.0
