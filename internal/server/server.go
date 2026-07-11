@@ -10,7 +10,9 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/intentius/mudflaps/internal/clock"
@@ -407,8 +409,17 @@ func (s *Server) transition(w http.ResponseWriter, r *http.Request, transient fl
 // (clamped) timeout elapses, in which case it returns 408.
 func (s *Server) waitMachine(w http.ResponseWriter, r *http.Request) {
 	app, mID := r.PathValue("app"), r.PathValue("id")
-	target := flaps.MachineState(defaultString(r.URL.Query().Get("state"), string(flaps.StateStarted)))
-	wantInstance := r.URL.Query().Get("instance_id")
+	// fly-go sends `state` repeated (any match satisfies the wait) and the
+	// version filter as `version`; accept `instance_id` too for spec
+	// completeness.
+	states := r.URL.Query()["state"]
+	if len(states) == 0 {
+		states = []string{string(flaps.StateStarted)}
+	}
+	wantVersion := r.URL.Query().Get("version")
+	if wantVersion == "" {
+		wantVersion = r.URL.Query().Get("instance_id")
+	}
 	timeout := clampTimeout(r.URL.Query().Get("timeout"))
 
 	// The deadline is measured on the injected clock, so production uses a real
@@ -421,7 +432,7 @@ func (s *Server) waitMachine(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, store.ErrMachineNotFound):
 			// A destroyed machine that has been reaped counts as destroyed.
-			if target == flaps.StateDestroyed {
+			if slices.Contains(states, string(flaps.StateDestroyed)) {
 				writeJSON(w, http.StatusOK, flaps.WaitResponse{OK: true})
 				return
 			}
@@ -431,12 +442,12 @@ func (s *Server) waitMachine(w http.ResponseWriter, r *http.Request) {
 			s.writeError(w, http.StatusNotFound, "app not found")
 			return
 		}
-		if m.State == target && (wantInstance == "" || wantInstance == m.InstanceID) {
+		if slices.Contains(states, string(m.State)) && (wantVersion == "" || wantVersion == m.InstanceID) {
 			writeJSON(w, http.StatusOK, flaps.WaitResponse{OK: true})
 			return
 		}
 		if s.clk.Now().After(deadline) {
-			s.writeError(w, http.StatusRequestTimeout, "timeout waiting for machine to reach "+string(target))
+			s.writeError(w, http.StatusRequestTimeout, "timeout waiting for machine to reach "+strings.Join(states, "|"))
 			return
 		}
 		select {
