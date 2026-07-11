@@ -396,7 +396,11 @@ func (s *Server) waitMachine(w http.ResponseWriter, r *http.Request) {
 	wantInstance := r.URL.Query().Get("instance_id")
 	timeout := clampTimeout(r.URL.Query().Get("timeout"))
 
-	deadline := time.Now().Add(timeout)
+	// The deadline is measured on the injected clock, so production uses a real
+	// wall-clock timeout while tests drive it deterministically by advancing the
+	// fake clock. The poll interval below stays real time — it only paces how
+	// often state is re-checked.
+	deadline := s.clk.Now().Add(timeout)
 	for {
 		m, err := s.store.GetMachine(app, mID)
 		switch {
@@ -416,7 +420,7 @@ func (s *Server) waitMachine(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, flaps.WaitResponse{OK: true})
 			return
 		}
-		if time.Now().After(deadline) {
+		if s.clk.Now().After(deadline) {
 			s.writeError(w, http.StatusRequestTimeout, "timeout waiting for machine to reach "+string(target))
 			return
 		}
