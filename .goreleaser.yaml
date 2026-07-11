@@ -42,7 +42,7 @@ checksum:
 dockers:
   - image_templates:
       - "ghcr.io/intentius/mudflaps:{{ .Version }}-amd64"
-    dockerfile: Dockerfile
+    dockerfile: Dockerfile.goreleaser
     use: buildx
     goos: linux
     goarch: amd64
@@ -54,7 +54,7 @@ dockers:
       - "--label=org.opencontainers.image.licenses=MIT"
   - image_templates:
       - "ghcr.io/intentius/mudflaps:{{ .Version }}-arm64"
-    dockerfile: Dockerfile
+    dockerfile: Dockerfile.goreleaser
     use: buildx
     goos: linux
     goarch: arm64
