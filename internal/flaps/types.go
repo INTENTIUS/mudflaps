@@ -180,9 +180,11 @@ type WaitResponse struct {
 
 // StopMachineInput is the optional body of POST .../stop. mudflaps accepts the
 // signal/timeout to honor the request shape; it does not model real signals.
+// Timeout is a duration string ("0s", "10s") to match fly-go, whose Timeout is
+// a Duration that marshals as a string and is sent on every Stop call.
 type StopMachineInput struct {
 	Signal  string `json:"signal,omitempty"`
-	Timeout int    `json:"timeout,omitempty"`
+	Timeout string `json:"timeout,omitempty"`
 }
 
 // ErrorResponse is the JSON body mudflaps returns for any non-2xx status. Fly's

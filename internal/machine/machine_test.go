@@ -1,6 +1,7 @@
 package machine
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -107,10 +108,11 @@ func TestStopAndDestroy(t *testing.T) {
 		t.Fatalf("state = %q, want stopped", got)
 	}
 
+	// Destroy reaps the machine: after the delay it is removed from the store.
 	a.Destroy("demo", "m1")
 	clk.Advance(time.Second)
-	if got := stateOf(t, s); got != flaps.StateDestroyed {
-		t.Fatalf("state = %q, want destroyed", got)
+	if _, err := s.GetMachine("demo", "m1"); !errors.Is(err, store.ErrMachineNotFound) {
+		t.Fatalf("after destroy: GetMachine err = %v, want ErrMachineNotFound (reaped)", err)
 	}
 }
 
