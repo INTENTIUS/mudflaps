@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-11
+
+Breadth: the full app-resource surface (volumes, secrets, IPs, certificates) plus
+regions, machine version history, and org-scoped listing.
+
 ### Added
 
 - Volume endpoints (`GET`/`POST /v1/apps/{app}/volumes`, `GET`/`PUT`/`DELETE
@@ -82,6 +87,7 @@ Fidelity and correctness pass from an adversarial audit against `superfly/fly-go
 - Distroless container image, GoReleaser configuration, mkdocs-material doc site,
   and CI.
 
-[Unreleased]: https://github.com/intentius/mudflaps/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/intentius/mudflaps/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/intentius/mudflaps/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/intentius/mudflaps/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/intentius/mudflaps/releases/tag/v0.1.0
