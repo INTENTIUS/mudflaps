@@ -53,3 +53,7 @@ Doc pages live in `docs/` and are built with mkdocs-material. Preview them with
 
 Open an issue using the bug or feature template. For anything security-related,
 see [SECURITY.md](./SECURITY.md) instead of filing a public issue.
+
+## Releasing
+
+Maintainers: see [RELEASING.md](./RELEASING.md). Releases are tag-driven — `just release X.Y.Z` from a clean `main`.

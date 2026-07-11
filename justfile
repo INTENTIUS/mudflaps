@@ -55,3 +55,25 @@ docs-build:
 # Serve the documentation site locally with live reload.
 docs-serve:
     mkdocs serve
+
+# Cut a release: preflight checks, then tag and push vVERSION (triggers the
+# Release workflow, which builds binaries + the GHCR image). Usage:
+#   just release 0.2.0
+# The CHANGELOG must already have a `## [VERSION]` section (see RELEASING.md).
+release version:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    [ -z "$(git status --porcelain)" ] || { echo "✗ working tree not clean"; exit 1; }
+    [ "$(git rev-parse --abbrev-ref HEAD)" = "main" ] || { echo "✗ not on main"; exit 1; }
+    git pull --ff-only origin main
+    grep -q "## \[{{version}}\]" CHANGELOG.md || { echo "✗ CHANGELOG.md has no '## [{{version}}]' section"; exit 1; }
+    echo "→ preflight: build / vet / gofmt / test"
+    go build ./...
+    go vet ./...
+    [ -z "$(gofmt -l .)" ] || { echo "✗ gofmt reported files"; exit 1; }
+    go test ./...
+    echo "→ tagging v{{version}}"
+    git tag -a "v{{version}}" -m "mudflaps v{{version}}"
+    git push origin "v{{version}}"
+    echo "✓ pushed v{{version}} — the Release workflow builds binaries + the GHCR image."
+    echo "  watch: gh run watch --repo INTENTIUS/mudflaps"
