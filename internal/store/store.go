@@ -182,7 +182,12 @@ func cloneMachine(m *flaps.Machine) *flaps.Machine {
 			cfg.Restart = &r
 		}
 		if m.Config.Services != nil {
-			cfg.Services = append([]flaps.Service(nil), m.Config.Services...)
+			svcs := make([]flaps.Service, len(m.Config.Services))
+			for i, svc := range m.Config.Services {
+				svc.Ports = clonePorts(svc.Ports)
+				svcs[i] = svc
+			}
+			cfg.Services = svcs
 		}
 		c.Config = &cfg
 	}
@@ -195,6 +200,22 @@ func cloneMachine(m *flaps.Machine) *flaps.Machine {
 		c.Versions = append([]flaps.MachineVersion(nil), m.Versions...)
 	}
 	return &c
+}
+
+// clonePorts deep-copies a service's ports, including each port's Handlers
+// slice, so a returned machine never aliases the stored one's nested slices.
+func clonePorts(in []flaps.Port) []flaps.Port {
+	if in == nil {
+		return nil
+	}
+	out := make([]flaps.Port, len(in))
+	for i, p := range in {
+		if p.Handlers != nil {
+			p.Handlers = append([]string(nil), p.Handlers...)
+		}
+		out[i] = p
+	}
+	return out
 }
 
 func cloneStringMap(in map[string]string) map[string]string {

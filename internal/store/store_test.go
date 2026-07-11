@@ -137,3 +137,35 @@ func TestConcurrentAccess(t *testing.T) {
 		t.Fatalf("machine count = %d, want %d", len(machines), workers)
 	}
 }
+
+// TestClonedMachinePortsAreIsolated is the regression for the audit clone
+// finding: a returned machine must not alias the stored machine's nested
+// service port/handler slices.
+func TestClonedMachinePortsAreIsolated(t *testing.T) {
+	s := New()
+	if _, err := s.CreateApp(flaps.App{Name: "demo"}); err != nil {
+		t.Fatalf("CreateApp: %v", err)
+	}
+	m := flaps.Machine{
+		ID: "m1",
+		Config: &flaps.MachineConfig{
+			Services: []flaps.Service{{
+				Protocol: "tcp",
+				Ports:    []flaps.Port{{Port: 443, Handlers: []string{"tls", "http"}}},
+			}},
+		},
+	}
+	if _, err := s.CreateMachine("demo", m); err != nil {
+		t.Fatalf("CreateMachine: %v", err)
+	}
+
+	// Mutate a returned clone's handler slice in place.
+	c1, _ := s.GetMachine("demo", "m1")
+	c1.Config.Services[0].Ports[0].Handlers[0] = "MUTATED"
+
+	// A fresh clone must be unaffected.
+	c2, _ := s.GetMachine("demo", "m1")
+	if got := c2.Config.Services[0].Ports[0].Handlers[0]; got != "tls" {
+		t.Fatalf("clone aliased stored handlers: got %q, want tls", got)
+	}
+}
