@@ -392,6 +392,51 @@ func TestMachineMetadataCRUD(t *testing.T) {
 	}
 }
 
+// TestCordonUncordon covers the cordon endpoints and their lease gating.
+func TestCordonUncordon(t *testing.T) {
+	h := newHarness(t)
+	m := h.createStartedMachine("demo")
+
+	if code, body := h.do(http.MethodPost, "/v1/apps/demo/machines/"+m.ID+"/cordon", nil, nil); code != http.StatusOK {
+		t.Fatalf("cordon = %d %s", code, body)
+	}
+	if code, body := h.do(http.MethodPost, "/v1/apps/demo/machines/"+m.ID+"/uncordon", nil, nil); code != http.StatusOK {
+		t.Fatalf("uncordon = %d %s", code, body)
+	}
+
+	// Cordon is lease-gated.
+	code, body := h.do(http.MethodPost, "/v1/apps/demo/machines/"+m.ID+"/lease",
+		flaps.AcquireLeaseRequest{TTL: 30}, nil)
+	if code != http.StatusOK {
+		t.Fatalf("acquire lease = %d %s", code, body)
+	}
+	var env flaps.MachineLease
+	h.mustJSON(body, &env)
+	if code, body := h.do(http.MethodPost, "/v1/apps/demo/machines/"+m.ID+"/cordon", nil, nil); code != http.StatusConflict {
+		t.Fatalf("cordon without nonce = %d %s, want 409", code, body)
+	}
+	if code, body := h.do(http.MethodPost, "/v1/apps/demo/machines/"+m.ID+"/cordon", nil,
+		map[string]string{LeaseNonceHeader: env.Data.Nonce}); code != http.StatusOK {
+		t.Fatalf("cordon with nonce = %d %s", code, body)
+	}
+}
+
+// TestStopAndRestartAcceptInputs confirms stop honors a StopMachineInput body
+// and restart honors ?force_stop= without error.
+func TestStopAndRestartAcceptInputs(t *testing.T) {
+	h := newHarness(t)
+	m := h.createStartedMachine("demo")
+
+	if code, body := h.do(http.MethodPost, "/v1/apps/demo/machines/"+m.ID+"/stop",
+		flaps.StopMachineInput{Signal: "SIGTERM", Timeout: 30}, nil); code != http.StatusOK {
+		t.Fatalf("stop with input = %d %s", code, body)
+	}
+	h.clk.Advance(time.Hour)
+	if code, body := h.do(http.MethodPost, "/v1/apps/demo/machines/"+m.ID+"/restart?force_stop=true", nil, nil); code != http.StatusOK {
+		t.Fatalf("restart force_stop = %d %s", code, body)
+	}
+}
+
 func TestDestroyAndWaitDestroyed(t *testing.T) {
 	h := newHarness(t)
 	m := h.createStartedMachine("demo")

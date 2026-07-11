@@ -62,6 +62,10 @@ type Machine struct {
 	// new instance_id and marks the prior version replaced) and is not part of
 	// the wire contract.
 	Versions []MachineVersion `json:"-"`
+
+	// Cordoned tracks whether the machine is cordoned (excluded from proxy
+	// routing). Internal bookkeeping — real networking isn't modeled.
+	Cordoned bool `json:"-"`
 }
 
 // MachineVersion is one entry in a machine's instance-ID history.
@@ -172,6 +176,13 @@ type AcquireLeaseRequest struct {
 // WaitResponse is returned by a successful GET .../wait.
 type WaitResponse struct {
 	OK bool `json:"ok"`
+}
+
+// StopMachineInput is the optional body of POST .../stop. mudflaps accepts the
+// signal/timeout to honor the request shape; it does not model real signals.
+type StopMachineInput struct {
+	Signal  string `json:"signal,omitempty"`
+	Timeout int    `json:"timeout,omitempty"`
 }
 
 // ErrorResponse is the JSON body mudflaps returns for any non-2xx status. Fly's
