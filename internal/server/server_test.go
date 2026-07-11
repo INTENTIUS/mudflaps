@@ -989,3 +989,60 @@ func TestCertificates(t *testing.T) {
 		t.Fatalf("get after delete = %d, want 404", code)
 	}
 }
+
+// TestMachineVersionsEndpoint covers GET .../versions (fidelity #24).
+func TestMachineVersionsEndpoint(t *testing.T) {
+	h := newHarness(t)
+	m := h.createStartedMachine("demo")
+	// After an update, versions should show the prior (replaced) + current.
+	if code, body := h.do(http.MethodPost, "/v1/apps/demo/machines/"+m.ID,
+		flaps.CreateMachineRequest{Config: &flaps.MachineConfig{Image: "nginx:2"}}, nil); code != http.StatusOK {
+		t.Fatalf("update = %d %s", code, body)
+	}
+	h.clk.Advance(time.Hour)
+	code, body := h.do(http.MethodGet, "/v1/apps/demo/machines/"+m.ID+"/versions", nil, nil)
+	if code != http.StatusOK {
+		t.Fatalf("versions = %d %s", code, body)
+	}
+	var vers []flaps.MachineVersion
+	h.mustJSON(body, &vers)
+	if len(vers) < 2 {
+		t.Fatalf("expected >=2 versions, got %d: %s", len(vers), body)
+	}
+	if vers[len(vers)-2].State != flaps.StateReplaced {
+		t.Fatalf("prior version not replaced: %+v", vers)
+	}
+	if vers[len(vers)-1].InstanceID == m.InstanceID {
+		t.Fatalf("current version instance_id did not churn")
+	}
+}
+
+// TestOrgScopedListing covers GET /v1/orgs/{org}/machines|volumes (fidelity #25).
+func TestOrgScopedListing(t *testing.T) {
+	h := newHarness(t)
+	// Two apps under org "acme", one under "other".
+	for _, a := range []struct{ name, org string }{{"a1", "acme"}, {"a2", "acme"}, {"a3", "other"}} {
+		if code, body := h.do(http.MethodPost, "/v1/apps", flaps.CreateAppRequest{AppName: a.name, OrgSlug: a.org}, nil); code != http.StatusCreated {
+			t.Fatalf("create app %s = %d %s", a.name, code, body)
+		}
+		if code, body := h.do(http.MethodPost, "/v1/apps/"+a.name+"/machines",
+			flaps.CreateMachineRequest{Config: &flaps.MachineConfig{Image: "nginx"}}, nil); code != http.StatusOK {
+			t.Fatalf("create machine in %s = %d %s", a.name, code, body)
+		}
+	}
+	_, body := h.do(http.MethodGet, "/v1/orgs/acme/machines", nil, nil)
+	var machines []flaps.Machine
+	h.mustJSON(body, &machines)
+	if len(machines) != 2 {
+		t.Fatalf("org acme machines = %d, want 2", len(machines))
+	}
+	// unknown org -> empty list, not 404
+	code, body := h.do(http.MethodGet, "/v1/orgs/nobody/machines", nil, nil)
+	if code != http.StatusOK {
+		t.Fatalf("unknown org = %d, want 200", code)
+	}
+	h.mustJSON(body, &machines)
+	if len(machines) != 0 {
+		t.Fatalf("unknown org machines = %d, want 0", len(machines))
+	}
+}

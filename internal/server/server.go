@@ -47,6 +47,7 @@ var implementedPaths = []string{
 	"POST /v1/apps/{app}/machines/{id}/cordon",
 	"POST /v1/apps/{app}/machines/{id}/uncordon",
 	"GET /v1/apps/{app}/machines/{id}/wait",
+	"GET /v1/apps/{app}/machines/{id}/versions",
 	"GET /v1/apps/{app}/machines/{id}/metadata",
 	"POST /v1/apps/{app}/machines/{id}/metadata/{key}",
 	"DELETE /v1/apps/{app}/machines/{id}/metadata/{key}",
@@ -70,6 +71,8 @@ var implementedPaths = []string{
 	"GET /v1/apps/{app}/certificates/{hostname}",
 	"DELETE /v1/apps/{app}/certificates/{hostname}",
 	"GET /v1/platform/regions",
+	"GET /v1/orgs/{org_slug}/machines",
+	"GET /v1/orgs/{org_slug}/volumes",
 }
 
 var unimplementedPaths = []string{
@@ -153,6 +156,7 @@ func (s *Server) routes() {
 	mux.HandleFunc("POST /v1/apps/{app}/machines/{id}/cordon", s.cordonMachine)
 	mux.HandleFunc("POST /v1/apps/{app}/machines/{id}/uncordon", s.uncordonMachine)
 	mux.HandleFunc("GET /v1/apps/{app}/machines/{id}/wait", s.waitMachine)
+	mux.HandleFunc("GET /v1/apps/{app}/machines/{id}/versions", s.machineVersions)
 
 	mux.HandleFunc("GET /v1/apps/{app}/machines/{id}/metadata", s.getMetadata)
 	mux.HandleFunc("POST /v1/apps/{app}/machines/{id}/metadata/{key}", s.setMetadata)
@@ -181,6 +185,9 @@ func (s *Server) routes() {
 	mux.HandleFunc("POST /v1/apps/{app}/certificates", s.createCertificate)
 	mux.HandleFunc("GET /v1/apps/{app}/certificates/{hostname}", s.getCertificate)
 	mux.HandleFunc("DELETE /v1/apps/{app}/certificates/{hostname}", s.deleteCertificate)
+
+	mux.HandleFunc("GET /v1/orgs/{org_slug}/machines", s.orgMachines)
+	mux.HandleFunc("GET /v1/orgs/{org_slug}/volumes", s.orgVolumes)
 
 	mux.HandleFunc("GET /v1/platform/regions", s.platformRegions)
 
@@ -309,6 +316,20 @@ func (s *Server) getMachine(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, m)
+}
+
+// machineVersions exposes a machine's instance-ID history (an update mints a new
+// version and marks the prior one replaced).
+func (s *Server) machineVersions(w http.ResponseWriter, r *http.Request) {
+	m, err := s.store.GetMachine(r.PathValue("app"), r.PathValue("id"))
+	if s.handleLookupError(w, err) {
+		return
+	}
+	versions := m.Versions
+	if versions == nil {
+		versions = []flaps.MachineVersion{}
+	}
+	writeJSON(w, http.StatusOK, versions)
 }
 
 // updateMachine applies a new config and churns the instance_id (version churn).
@@ -655,6 +676,19 @@ func (s *Server) releaseLease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, flaps.MachineLease{Status: "released"})
+}
+
+// ---- orgs ----
+//
+// Org-scoped listing flattens across every app owned by the org slug. An unknown
+// org returns an empty list, not a 404.
+
+func (s *Server) orgMachines(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.store.ListMachinesByOrg(r.PathValue("org_slug")))
+}
+
+func (s *Server) orgVolumes(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.store.ListVolumesByOrg(r.PathValue("org_slug")))
 }
 
 // ---- platform ----
