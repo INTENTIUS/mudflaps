@@ -1,10 +1,10 @@
 # API coverage
 
 mudflaps implements the subset of flaps that an infrastructure-as-code applier
-exercises: apps, machines, wait, and leases. Endpoints that are not yet built
-answer `501 Not Implemented` with a clear JSON error rather than a misleading
-success, and they are listed under `unimplemented` in the
-`/_mudflaps/health` payload.
+exercises: apps, machines (full lifecycle), metadata, wait, and leases.
+Endpoints that are not yet built answer `501 Not Implemented` with a clear JSON
+error rather than a misleading success, and they are listed under
+`unimplemented` in the `/_mudflaps/health` payload.
 
 ## Implemented
 
@@ -14,15 +14,21 @@ success, and they are listed under `unimplemented` in the
 | POST | `/v1/apps` | Create an app. |
 | GET | `/v1/apps/{app}` | Get an app. |
 | DELETE | `/v1/apps/{app}` | Delete an app and its machines. |
-| POST | `/v1/apps/{app}/machines` | Create a machine; starts the lifecycle. |
+| POST | `/v1/apps/{app}/machines` | Create a machine; starts the lifecycle (`skip_launch` rests at `created`). |
 | GET | `/v1/apps/{app}/machines` | List machines. |
 | GET | `/v1/apps/{app}/machines/{id}` | Get a machine. |
 | POST | `/v1/apps/{app}/machines/{id}` | Update a machine; churns `instance_id`. |
-| DELETE | `/v1/apps/{app}/machines/{id}` | Destroy a machine. |
-| POST | `/v1/apps/{app}/machines/{id}/start` | Start a stopped machine. |
-| POST | `/v1/apps/{app}/machines/{id}/stop` | Stop a machine. |
-| POST | `/v1/apps/{app}/machines/{id}/restart` | Restart a machine. |
+| DELETE | `/v1/apps/{app}/machines/{id}` | Destroy a machine (reaped once settled). |
+| POST | `/v1/apps/{app}/machines/{id}/start` | Start a stopped or suspended machine. |
+| POST | `/v1/apps/{app}/machines/{id}/stop` | Stop a machine (accepts a `StopMachineInput` body). |
+| POST | `/v1/apps/{app}/machines/{id}/restart` | Restart a machine (accepts `?force_stop=`). |
+| POST | `/v1/apps/{app}/machines/{id}/suspend` | Suspend a machine (resume via start). |
+| POST | `/v1/apps/{app}/machines/{id}/cordon` | Cordon a machine. |
+| POST | `/v1/apps/{app}/machines/{id}/uncordon` | Uncordon a machine. |
 | GET | `/v1/apps/{app}/machines/{id}/wait` | Block until a target state or `408`. |
+| GET | `/v1/apps/{app}/machines/{id}/metadata` | Read machine metadata. |
+| POST | `/v1/apps/{app}/machines/{id}/metadata/{key}` | Set a metadata key. |
+| DELETE | `/v1/apps/{app}/machines/{id}/metadata/{key}` | Delete a metadata key. |
 | GET | `/v1/apps/{app}/machines/{id}/lease` | Read the active lease. |
 | POST | `/v1/apps/{app}/machines/{id}/lease` | Acquire or refresh a lease. |
 | DELETE | `/v1/apps/{app}/machines/{id}/lease` | Release a lease. |
@@ -33,10 +39,12 @@ success, and they are listed under `unimplemented` in the
 | Path | Area |
 | --- | --- |
 | `/v1/apps/{app}/volumes` | Volumes |
-| `/v1/apps/{app}/machines/{id}/metadata` | Machine metadata |
 | `/v1/apps/{app}/secrets` | Secrets |
 | `/v1/apps/{app}/certificates` | Certificates |
 | `/v1/apps/{app}/ip_assignments` | IP assignments |
+| `/v1/apps/{app}/machines/{id}/signal` | Send a signal |
+| `/v1/apps/{app}/machines/{id}/exec` | Exec in a machine |
+| `/v1/apps/{app}/machines/{id}/ps` | List processes |
 
 ## Wire fidelity
 
