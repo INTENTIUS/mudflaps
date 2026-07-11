@@ -42,6 +42,8 @@ var implementedPaths = []string{
 	"POST /v1/apps/{app}/machines/{id}/stop",
 	"POST /v1/apps/{app}/machines/{id}/restart",
 	"POST /v1/apps/{app}/machines/{id}/suspend",
+	"POST /v1/apps/{app}/machines/{id}/cordon",
+	"POST /v1/apps/{app}/machines/{id}/uncordon",
 	"GET /v1/apps/{app}/machines/{id}/wait",
 	"GET /v1/apps/{app}/machines/{id}/metadata",
 	"POST /v1/apps/{app}/machines/{id}/metadata/{key}",
@@ -130,6 +132,8 @@ func (s *Server) routes() {
 	mux.HandleFunc("POST /v1/apps/{app}/machines/{id}/stop", s.stopMachine)
 	mux.HandleFunc("POST /v1/apps/{app}/machines/{id}/restart", s.restartMachine)
 	mux.HandleFunc("POST /v1/apps/{app}/machines/{id}/suspend", s.suspendMachine)
+	mux.HandleFunc("POST /v1/apps/{app}/machines/{id}/cordon", s.cordonMachine)
+	mux.HandleFunc("POST /v1/apps/{app}/machines/{id}/uncordon", s.uncordonMachine)
 	mux.HandleFunc("GET /v1/apps/{app}/machines/{id}/wait", s.waitMachine)
 
 	mux.HandleFunc("GET /v1/apps/{app}/machines/{id}/metadata", s.getMetadata)
@@ -318,10 +322,19 @@ func (s *Server) startMachine(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) stopMachine(w http.ResponseWriter, r *http.Request) {
+	// Accept the optional StopMachineInput (signal/timeout). mudflaps doesn't
+	// model real signals, but honoring the documented body shape means a client
+	// that sends one isn't rejected.
+	var in flaps.StopMachineInput
+	if r.ContentLength != 0 && !decodeJSON(w, r, &in) {
+		return
+	}
 	s.transition(w, r, flaps.StateStopping, s.advancer.Stop)
 }
 
 func (s *Server) restartMachine(w http.ResponseWriter, r *http.Request) {
+	// force_stop is accepted (mudflaps settles instantly regardless).
+	_ = r.URL.Query().Get("force_stop")
 	s.transition(w, r, flaps.StateRestarting, s.advancer.Restart)
 }
 
@@ -329,6 +342,32 @@ func (s *Server) restartMachine(w http.ResponseWriter, r *http.Request) {
 // start.
 func (s *Server) suspendMachine(w http.ResponseWriter, r *http.Request) {
 	s.transition(w, r, flaps.StateSuspending, s.advancer.Suspend)
+}
+
+// cordonMachine / uncordonMachine toggle the machine's cordon flag (excluded
+// from proxy routing in real Fly; internal bookkeeping here). Lease-gated.
+func (s *Server) cordonMachine(w http.ResponseWriter, r *http.Request) {
+	s.setCordon(w, r, true)
+}
+
+func (s *Server) uncordonMachine(w http.ResponseWriter, r *http.Request) {
+	s.setCordon(w, r, false)
+}
+
+func (s *Server) setCordon(w http.ResponseWriter, r *http.Request, cordoned bool) {
+	app, mID := r.PathValue("app"), r.PathValue("id")
+	if s.rejectIfLeased(w, r, app, mID) {
+		return
+	}
+	_, err := s.store.UpdateMachine(app, mID, func(m *flaps.Machine) error {
+		m.Cordoned = cordoned
+		return nil
+	})
+	if s.handleLookupError(w, err) {
+		return
+	}
+	s.touch(app, mID)
+	writeJSON(w, http.StatusOK, flaps.WaitResponse{OK: true})
 }
 
 // transition sets a transient state then schedules the advance to rest.
