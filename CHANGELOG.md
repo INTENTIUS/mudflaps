@@ -12,6 +12,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   /v1/apps/{app}/volumes/{vol}`).
 - Apply-only secret endpoints (`GET`/`POST`/`DELETE /v1/apps/{app}/secrets[/{name}]`);
   mudflaps stores a digest, never the value.
+- IP assignment endpoints (`GET`/`POST /v1/apps/{app}/ip_assignments`, `DELETE
+  .../ip_assignments/{ip}`).
+- Certificate endpoints (`GET`/`POST /v1/apps/{app}/certificates`, `GET`/`DELETE
+  .../certificates/{hostname}`); shape only, no real ACME issuance.
 - `GET /v1/platform/regions` returns a static, representative list of Fly regions
   (unblocks region validation for clients).
 
