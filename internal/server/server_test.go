@@ -458,6 +458,47 @@ func TestDestroyAndWaitDestroyed(t *testing.T) {
 	}
 }
 
+// TestWaitTimesOut drives the injected clock past the wait deadline and asserts
+// a 408. The wait runs on the httptest server's goroutine while the test keeps
+// advancing the fake clock until the handler returns — no race and no
+// multi-second real sleep.
+func TestWaitTimesOut(t *testing.T) {
+	h := newHarness(t)
+	if code, body := h.do(http.MethodPost, "/v1/apps", flaps.CreateAppRequest{AppName: "demo"}, nil); code != http.StatusCreated {
+		t.Fatalf("create app = %d %s", code, body)
+	}
+	// skip_launch leaves the machine in 'created', so it never reaches 'started'.
+	code, body := h.do(http.MethodPost, "/v1/apps/demo/machines",
+		flaps.CreateMachineRequest{Config: &flaps.MachineConfig{Image: "nginx"}, SkipLaunch: true}, nil)
+	if code != http.StatusCreated {
+		t.Fatalf("create machine = %d %s", code, body)
+	}
+	var m flaps.Machine
+	h.mustJSON(body, &m)
+
+	done := make(chan int, 1)
+	go func() {
+		c, _ := h.do(http.MethodGet, "/v1/apps/demo/machines/"+m.ID+"/wait?state=started&timeout=1", nil, nil)
+		done <- c
+	}()
+
+	safety := time.After(3 * time.Second)
+	for {
+		select {
+		case c := <-done:
+			if c != http.StatusRequestTimeout {
+				t.Fatalf("wait returned %d, want 408", c)
+			}
+			return
+		case <-safety:
+			t.Fatal("wait did not time out")
+		default:
+			h.clk.Advance(500 * time.Millisecond)
+			time.Sleep(2 * time.Millisecond)
+		}
+	}
+}
+
 func TestUnimplementedReturns501(t *testing.T) {
 	h := newHarness(t)
 	if code, body := h.do(http.MethodGet, "/v1/apps/demo/volumes", nil, nil); code != http.StatusNotImplemented {
