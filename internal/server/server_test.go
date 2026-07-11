@@ -342,6 +342,56 @@ func TestSuspendIsLeaseGated(t *testing.T) {
 	}
 }
 
+// TestMachineMetadataCRUD covers set/get/delete on machine metadata — the
+// ownership-marker surface — and that changes are reflected on the machine.
+func TestMachineMetadataCRUD(t *testing.T) {
+	h := newHarness(t)
+	m := h.createStartedMachine("demo")
+
+	// Set managed-by: chant.
+	if code, body := h.do(http.MethodPost, "/v1/apps/demo/machines/"+m.ID+"/metadata/managed-by",
+		map[string]string{"value": "chant"}, nil); code != http.StatusNoContent {
+		t.Fatalf("set metadata = %d %s, want 204", code, body)
+	}
+
+	// Get returns the map.
+	code, body := h.do(http.MethodGet, "/v1/apps/demo/machines/"+m.ID+"/metadata", nil, nil)
+	if code != http.StatusOK {
+		t.Fatalf("get metadata = %d %s", code, body)
+	}
+	var md map[string]string
+	h.mustJSON(body, &md)
+	if md["managed-by"] != "chant" {
+		t.Fatalf("metadata = %+v, want managed-by=chant", md)
+	}
+
+	// The key is also visible on the machine object.
+	code, body = h.do(http.MethodGet, "/v1/apps/demo/machines/"+m.ID, nil, nil)
+	if code != http.StatusOK {
+		t.Fatalf("get machine = %d %s", code, body)
+	}
+	var got flaps.Machine
+	h.mustJSON(body, &got)
+	if got.Config == nil || got.Config.Metadata["managed-by"] != "chant" {
+		t.Fatalf("machine metadata not reflected: %+v", got.Config)
+	}
+
+	// Delete removes it.
+	if code, body := h.do(http.MethodDelete, "/v1/apps/demo/machines/"+m.ID+"/metadata/managed-by", nil, nil); code != http.StatusNoContent {
+		t.Fatalf("delete metadata = %d %s, want 204", code, body)
+	}
+	code, body = h.do(http.MethodGet, "/v1/apps/demo/machines/"+m.ID+"/metadata", nil, nil)
+	if code != http.StatusOK {
+		t.Fatalf("get metadata after delete = %d %s", code, body)
+	}
+	// Use a fresh map: unmarshaling into a populated map would not clear keys.
+	var after map[string]string
+	h.mustJSON(body, &after)
+	if _, ok := after["managed-by"]; ok {
+		t.Fatalf("metadata key not deleted: %+v", after)
+	}
+}
+
 func TestDestroyAndWaitDestroyed(t *testing.T) {
 	h := newHarness(t)
 	m := h.createStartedMachine("demo")

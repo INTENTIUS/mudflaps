@@ -43,6 +43,9 @@ var implementedPaths = []string{
 	"POST /v1/apps/{app}/machines/{id}/restart",
 	"POST /v1/apps/{app}/machines/{id}/suspend",
 	"GET /v1/apps/{app}/machines/{id}/wait",
+	"GET /v1/apps/{app}/machines/{id}/metadata",
+	"POST /v1/apps/{app}/machines/{id}/metadata/{key}",
+	"DELETE /v1/apps/{app}/machines/{id}/metadata/{key}",
 	"GET /v1/apps/{app}/machines/{id}/lease",
 	"POST /v1/apps/{app}/machines/{id}/lease",
 	"DELETE /v1/apps/{app}/machines/{id}/lease",
@@ -50,7 +53,6 @@ var implementedPaths = []string{
 
 var unimplementedPaths = []string{
 	"/v1/apps/{app}/volumes",
-	"/v1/apps/{app}/machines/{id}/metadata",
 	"/v1/apps/{app}/secrets",
 	"/v1/apps/{app}/certificates",
 	"/v1/apps/{app}/ip_assignments",
@@ -129,6 +131,10 @@ func (s *Server) routes() {
 	mux.HandleFunc("POST /v1/apps/{app}/machines/{id}/restart", s.restartMachine)
 	mux.HandleFunc("POST /v1/apps/{app}/machines/{id}/suspend", s.suspendMachine)
 	mux.HandleFunc("GET /v1/apps/{app}/machines/{id}/wait", s.waitMachine)
+
+	mux.HandleFunc("GET /v1/apps/{app}/machines/{id}/metadata", s.getMetadata)
+	mux.HandleFunc("POST /v1/apps/{app}/machines/{id}/metadata/{key}", s.setMetadata)
+	mux.HandleFunc("DELETE /v1/apps/{app}/machines/{id}/metadata/{key}", s.deleteMetadata)
 
 	mux.HandleFunc("GET /v1/apps/{app}/machines/{id}/lease", s.getLease)
 	mux.HandleFunc("POST /v1/apps/{app}/machines/{id}/lease", s.acquireLease)
@@ -381,6 +387,63 @@ func (s *Server) waitMachine(w http.ResponseWriter, r *http.Request) {
 		case <-time.After(waitPollInterval):
 		}
 	}
+}
+
+// ---- metadata ----
+//
+// Metadata is the ownership-marker surface (e.g. managed-by: chant). Matching
+// flaps/fly-go, these endpoints are not lease-gated: fly-go sends no nonce.
+
+func (s *Server) getMetadata(w http.ResponseWriter, r *http.Request) {
+	m, err := s.store.GetMachine(r.PathValue("app"), r.PathValue("id"))
+	if s.handleLookupError(w, err) {
+		return
+	}
+	md := map[string]string{}
+	if m.Config != nil && m.Config.Metadata != nil {
+		md = m.Config.Metadata
+	}
+	writeJSON(w, http.StatusOK, md)
+}
+
+func (s *Server) setMetadata(w http.ResponseWriter, r *http.Request) {
+	app, mID, key := r.PathValue("app"), r.PathValue("id"), r.PathValue("key")
+	var req struct {
+		Value string `json:"value"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	_, err := s.store.UpdateMachine(app, mID, func(m *flaps.Machine) error {
+		if m.Config == nil {
+			m.Config = &flaps.MachineConfig{}
+		}
+		if m.Config.Metadata == nil {
+			m.Config.Metadata = map[string]string{}
+		}
+		m.Config.Metadata[key] = req.Value
+		return nil
+	})
+	if s.handleLookupError(w, err) {
+		return
+	}
+	s.touch(app, mID)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) deleteMetadata(w http.ResponseWriter, r *http.Request) {
+	app, mID, key := r.PathValue("app"), r.PathValue("id"), r.PathValue("key")
+	_, err := s.store.UpdateMachine(app, mID, func(m *flaps.Machine) error {
+		if m.Config != nil && m.Config.Metadata != nil {
+			delete(m.Config.Metadata, key)
+		}
+		return nil
+	})
+	if s.handleLookupError(w, err) {
+		return
+	}
+	s.touch(app, mID)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ---- leases ----
