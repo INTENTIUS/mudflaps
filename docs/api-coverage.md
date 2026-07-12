@@ -3,9 +3,10 @@
 mudflaps implements the subset of flaps that an infrastructure-as-code applier
 exercises: apps, machines (full lifecycle), metadata, wait, leases, volumes,
 secrets (apply-only), IP assignments, and certificates.
-Endpoints that are not yet built answer `501 Not Implemented` with a clear JSON
-error rather than a misleading success, and they are listed under
-`unimplemented` in the `/_mudflaps/health` payload.
+Every documented endpoint mudflaps targets is now implemented, so the roadmap is
+empty and `/_mudflaps/health` reports an empty `unimplemented` list. Any endpoint
+staged there in future answers `501 Not Implemented` with a clear JSON error
+rather than a misleading success.
 
 ## Implemented
 
@@ -26,6 +27,9 @@ error rather than a misleading success, and they are listed under
 | POST | `/v1/apps/{app}/machines/{id}/suspend` | Suspend a machine (resume via start). |
 | POST | `/v1/apps/{app}/machines/{id}/cordon` | Cordon a machine. |
 | POST | `/v1/apps/{app}/machines/{id}/uncordon` | Uncordon a machine. |
+| POST | `/v1/apps/{app}/machines/{id}/signal` | Send a signal (validated; not delivered). |
+| POST | `/v1/apps/{app}/machines/{id}/exec` | Exec — deterministic fake result (exit 0). |
+| GET | `/v1/apps/{app}/machines/{id}/ps` | List processes (deterministic fake). |
 | GET | `/v1/apps/{app}/machines/{id}/wait` | Block until a target state or `408`. |
 | GET | `/v1/apps/{app}/machines/{id}/versions` | The machine's instance-ID history. |
 | GET | `/v1/apps/{app}/machines/{id}/metadata` | Read machine metadata. |
@@ -55,13 +59,12 @@ error rather than a misleading success, and they are listed under
 | GET | `/v1/platform/regions` | List Fly regions (a static, representative set). |
 | GET | `/_mudflaps/health` | Version and coverage report (mudflaps-only). |
 
-## Roadmap (currently `501`)
+## Roadmap
 
-| Path | Area |
-| --- | --- |
-| `/v1/apps/{app}/machines/{id}/signal` | Send a signal |
-| `/v1/apps/{app}/machines/{id}/exec` | Exec in a machine |
-| `/v1/apps/{app}/machines/{id}/ps` | List processes |
+Empty — every documented Machines endpoint mudflaps targets is implemented,
+including `signal`, `exec`, and `ps` (each a deterministic stateful-fake result;
+mudflaps runs no real processes). New endpoints are staged here as fly-go / the
+OpenAPI grows.
 
 ## Wire fidelity
 

@@ -22,7 +22,7 @@ Testing a Machines-API client, such as an infrastructure-as-code applier, requir
 - Machine leases with nonce, TTL, owner, and expiry; a mutation by a non-holder returns `409`, and a conflicting acquire returns the holder's lease envelope (without the nonce).
 - Synchronous version churn: an update mints a new `instance_id`, marks the prior version `replaced`, and returns the new version in the response.
 - `/wait` long-poll that blocks until a target state or returns `408`; the deadline is measured on the injected clock, so timeouts are deterministic in tests.
-- A `/_mudflaps/health` endpoint that lists implemented and roadmap paths; unimplemented endpoints return `501`.
+- A `/_mudflaps/health` endpoint that reports the implemented paths; the roadmap is currently empty — every documented endpoint mudflaps targets is built.
 - Single static binary and distroless container image; no runtime dependencies.
 
 ## Quick start
@@ -88,18 +88,19 @@ curl -s -o /dev/null -w '%{http_code}\n' \
 
 ## API coverage
 
-Implemented: the apps and machines endpoints (including start, stop, restart,
-suspend, cordon/uncordon, and metadata), `/wait`, and the lease endpoints.
-Volumes, secrets, certificates, and IP assignments return `501` and are listed
-as roadmap items in the `/_mudflaps/health` payload. The full table is in the
+Implemented: the apps and machines endpoints (start, stop, restart, suspend,
+cordon/uncordon, metadata, signal, exec, ps), `/wait`, the lease endpoints, and
+volumes, secrets (apply-only), IP assignments, and certificates. The roadmap is
+empty — every documented endpoint mudflaps targets is built, so `/_mudflaps/health`
+reports an empty `unimplemented` list. The full table is in the
 [API coverage docs](https://intentius.github.io/mudflaps/api-coverage/).
 
 ## Roadmap
 
 mudflaps is the local target for the `chant` fly lexicon's `flyApply` applier.
-Tracking issues: [chant #736 (epic)](https://github.com/intentius/chant/issues/736)
-and [chant #740](https://github.com/intentius/chant/issues/740). Volumes,
-secrets, certificate, and IP endpoints are tracked under the Breadth milestone.
+Tracking epic: [chant #736](https://github.com/intentius/chant/issues/736). The
+Machines surface an IaC applier exercises is complete; new endpoints are staged
+here as fly-go / the OpenAPI grows.
 
 ## Development
 

@@ -100,8 +100,13 @@ func TestHealth(t *testing.T) {
 	if payload.Status != "ok" || payload.Version != "test" {
 		t.Fatalf("unexpected health payload: %+v", payload)
 	}
-	if len(payload.Implemented) == 0 || len(payload.Unimplemented) == 0 {
-		t.Fatalf("expected non-empty coverage lists: %+v", payload)
+	if len(payload.Implemented) == 0 {
+		t.Fatalf("expected a non-empty implemented list: %+v", payload)
+	}
+	// The roadmap is cleared — every documented endpoint mudflaps targets is now
+	// implemented, so the unimplemented list is empty (but still reported).
+	if len(payload.Unimplemented) != 0 {
+		t.Fatalf("expected an empty unimplemented list, got: %+v", payload.Unimplemented)
 	}
 }
 
@@ -637,10 +642,22 @@ func TestWaitTimesOut(t *testing.T) {
 	}
 }
 
-func TestUnimplementedReturns501(t *testing.T) {
+func TestSignalMachine(t *testing.T) {
 	h := newHarness(t)
-	if code, body := h.do(http.MethodPost, "/v1/apps/demo/machines/x/signal", nil, nil); code != http.StatusNotImplemented {
-		t.Fatalf("signal = %d %s, want 501", code, body)
+	m := h.createStartedMachine("demo")
+	base := "/v1/apps/demo/machines/" + m.ID
+
+	if code, body := h.do(http.MethodPost, base+"/signal", flaps.SignalRequest{Signal: "SIGTERM"}, nil); code != http.StatusOK {
+		t.Fatalf("signal SIGTERM = %d %s, want 200", code, body)
+	}
+	if code, _ := h.do(http.MethodPost, base+"/signal", flaps.SignalRequest{Signal: "SIGBOGUS"}, nil); code != http.StatusBadRequest {
+		t.Fatalf("invalid signal, want 400")
+	}
+	if code, _ := h.do(http.MethodPost, base+"/signal", flaps.SignalRequest{}, nil); code != http.StatusBadRequest {
+		t.Fatalf("missing signal, want 400")
+	}
+	if code, _ := h.do(http.MethodPost, "/v1/apps/demo/machines/nope/signal", flaps.SignalRequest{Signal: "SIGKILL"}, nil); code != http.StatusNotFound {
+		t.Fatalf("signal unknown machine, want 404")
 	}
 }
 
@@ -669,27 +686,47 @@ func TestCordonSurfacedOnMachine(t *testing.T) {
 	}
 }
 
-// TestSignalExecPsReturn501 is the regression for audit M6: fly-go's
-// signal/exec/ps answer an honest 501 and appear in health coverage.
-func TestSignalExecPsReturn501(t *testing.T) {
+// TestExecMachine covers POST .../exec: mudflaps returns a deterministic
+// ExecResponse (it cannot run a real command).
+func TestExecMachine(t *testing.T) {
 	h := newHarness(t)
 	m := h.createStartedMachine("demo")
 	base := "/v1/apps/demo/machines/" + m.ID
-	for _, tc := range []struct{ method, path string }{
-		{http.MethodPost, base + "/signal"},
-		{http.MethodPost, base + "/exec"},
-		{http.MethodGet, base + "/ps"},
-	} {
-		if code, body := h.do(tc.method, tc.path, nil, nil); code != http.StatusNotImplemented {
-			t.Fatalf("%s %s = %d %s, want 501", tc.method, tc.path, code, body)
-		}
+
+	code, body := h.do(http.MethodPost, base+"/exec", flaps.MachineExecRequest{Command: []string{"echo", "hi"}}, nil)
+	if code != http.StatusOK {
+		t.Fatalf("exec = %d %s, want 200", code, body)
 	}
-	// They must be disclosed in the health coverage list.
-	_, body := h.do(http.MethodGet, "/_mudflaps/health", nil, nil)
-	for _, want := range []string{"signal", "exec", "ps"} {
-		if !strings.Contains(string(body), "/"+want) {
-			t.Fatalf("health unimplemented missing %q: %s", want, body)
-		}
+	var res flaps.ExecResponse
+	h.mustJSON(body, &res)
+	if res.ExitCode != 0 || res.Stdout != "echo hi\n" {
+		t.Fatalf("exec response = %+v", res)
+	}
+	if code, _ := h.do(http.MethodPost, base+"/exec", flaps.MachineExecRequest{}, nil); code != http.StatusBadRequest {
+		t.Fatalf("exec with no command, want 400")
+	}
+	if code, _ := h.do(http.MethodPost, "/v1/apps/demo/machines/nope/exec", flaps.MachineExecRequest{Cmd: "ls"}, nil); code != http.StatusNotFound {
+		t.Fatalf("exec unknown machine, want 404")
+	}
+}
+
+// TestPsMachine covers GET .../ps: a deterministic process list.
+func TestPsMachine(t *testing.T) {
+	h := newHarness(t)
+	m := h.createStartedMachine("demo")
+	base := "/v1/apps/demo/machines/" + m.ID
+
+	code, body := h.do(http.MethodGet, base+"/ps", nil, nil)
+	if code != http.StatusOK {
+		t.Fatalf("ps = %d %s, want 200", code, body)
+	}
+	var procs []flaps.ProcessStat
+	h.mustJSON(body, &procs)
+	if len(procs) == 0 || procs[0].PID != 1 {
+		t.Fatalf("ps response = %+v", procs)
+	}
+	if code, _ := h.do(http.MethodGet, "/v1/apps/demo/machines/nope/ps", nil, nil); code != http.StatusNotFound {
+		t.Fatalf("ps unknown machine, want 404")
 	}
 }
 
