@@ -321,6 +321,51 @@ type StopMachineInput struct {
 	Timeout string `json:"timeout,omitempty"`
 }
 
+// SignalRequest is the body of POST .../signal. The signal names mirror the
+// Machines API enum (SIGTERM, SIGKILL, …). mudflaps validates the name but does
+// not model real signal delivery — like stop, it honors the request shape.
+type SignalRequest struct {
+	Signal string `json:"signal"`
+}
+
+// MachineExecRequest is the body of POST .../exec. `cmd` is the deprecated
+// single-string form; `command` is the argv form. mudflaps cannot actually run
+// a command, so it returns a deterministic ExecResponse.
+type MachineExecRequest struct {
+	Cmd       string   `json:"cmd,omitempty"`
+	Command   []string `json:"command,omitempty"`
+	Container string   `json:"container,omitempty"`
+	Stdin     string   `json:"stdin,omitempty"`
+	Timeout   int      `json:"timeout,omitempty"`
+}
+
+// ExecResponse is the result of POST .../exec (fly-go flydv1.ExecResponse).
+type ExecResponse struct {
+	ExitCode   int    `json:"exit_code"`
+	ExitSignal int    `json:"exit_signal"`
+	Stdout     string `json:"stdout"`
+	Stderr     string `json:"stderr"`
+}
+
+// ListenSocket is one socket a process listens on (part of ProcessStat).
+type ListenSocket struct {
+	Address string `json:"address"`
+	Proto   string `json:"proto"`
+}
+
+// ProcessStat is one row of GET .../ps. mudflaps returns a deterministic set —
+// it does not run real processes.
+type ProcessStat struct {
+	Command       string         `json:"command"`
+	CPU           int            `json:"cpu"`
+	Directory     string         `json:"directory"`
+	ListenSockets []ListenSocket `json:"listen_sockets"`
+	PID           int            `json:"pid"`
+	RSS           int            `json:"rss"`
+	Rtime         int            `json:"rtime"`
+	Stime         int            `json:"stime"`
+}
+
 // ErrorResponse is the JSON body mudflaps returns for any non-2xx status. Fly's
 // flaps errors carry an "error" message; mudflaps adds a machine-readable
 // status for convenience.

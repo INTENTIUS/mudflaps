@@ -70,16 +70,18 @@ var implementedPaths = []string{
 	"POST /v1/apps/{app}/certificates",
 	"GET /v1/apps/{app}/certificates/{hostname}",
 	"DELETE /v1/apps/{app}/certificates/{hostname}",
+	"POST /v1/apps/{app}/machines/{id}/signal",
+	"POST /v1/apps/{app}/machines/{id}/exec",
+	"GET /v1/apps/{app}/machines/{id}/ps",
 	"GET /v1/platform/regions",
 	"GET /v1/orgs/{org_slug}/machines",
 	"GET /v1/orgs/{org_slug}/volumes",
 }
 
-var unimplementedPaths = []string{
-	"/v1/apps/{app}/machines/{id}/signal",
-	"/v1/apps/{app}/machines/{id}/exec",
-	"/v1/apps/{app}/machines/{id}/ps",
-}
+// unimplementedPaths is empty: every documented Machines endpoint mudflaps
+// targets is now implemented. Retained so the health endpoint can keep reporting
+// a (now empty) roadmap and a future endpoint can be staged here again.
+var unimplementedPaths = []string{}
 
 // Options configures a Server.
 type Options struct {
@@ -155,6 +157,9 @@ func (s *Server) routes() {
 	mux.HandleFunc("POST /v1/apps/{app}/machines/{id}/suspend", s.suspendMachine)
 	mux.HandleFunc("POST /v1/apps/{app}/machines/{id}/cordon", s.cordonMachine)
 	mux.HandleFunc("POST /v1/apps/{app}/machines/{id}/uncordon", s.uncordonMachine)
+	mux.HandleFunc("POST /v1/apps/{app}/machines/{id}/signal", s.signalMachine)
+	mux.HandleFunc("POST /v1/apps/{app}/machines/{id}/exec", s.execMachine)
+	mux.HandleFunc("GET /v1/apps/{app}/machines/{id}/ps", s.psMachine)
 	mux.HandleFunc("GET /v1/apps/{app}/machines/{id}/wait", s.waitMachine)
 	mux.HandleFunc("GET /v1/apps/{app}/machines/{id}/versions", s.machineVersions)
 
@@ -465,6 +470,68 @@ func (s *Server) setCordon(w http.ResponseWriter, r *http.Request, cordoned bool
 	}
 	s.touch(app, mID)
 	writeJSON(w, http.StatusOK, struct{}{})
+}
+
+// validSignals is the SignalRequest enum from the Machines API OpenAPI.
+var validSignals = map[string]bool{
+	"SIGABRT": true, "SIGALRM": true, "SIGFPE": true, "SIGHUP": true,
+	"SIGILL": true, "SIGINT": true, "SIGKILL": true, "SIGPIPE": true,
+	"SIGQUIT": true, "SIGSEGV": true, "SIGTERM": true, "SIGTRAP": true,
+	"SIGUSR1": true, "SIGUSR2": true,
+}
+
+// signalMachine handles POST .../signal. It validates the signal name and that
+// the machine exists; like stop, mudflaps does not model real signal delivery.
+func (s *Server) signalMachine(w http.ResponseWriter, r *http.Request) {
+	var in flaps.SignalRequest
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	if !validSignals[in.Signal] {
+		s.writeError(w, http.StatusBadRequest, "invalid or missing signal")
+		return
+	}
+	if _, err := s.store.GetMachine(r.PathValue("app"), r.PathValue("id")); s.handleLookupError(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, struct{}{})
+}
+
+// execMachine handles POST .../exec. As a stateful fake it cannot run a command,
+// so it returns a deterministic ExecResponse (exit 0) that echoes the requested
+// command — enough for a client to exercise the request/response contract.
+func (s *Server) execMachine(w http.ResponseWriter, r *http.Request) {
+	var in flaps.MachineExecRequest
+	if !decodeJSON(w, r, &in) {
+		return
+	}
+	if _, err := s.store.GetMachine(r.PathValue("app"), r.PathValue("id")); s.handleLookupError(w, err) {
+		return
+	}
+	cmd := in.Cmd
+	if cmd == "" && len(in.Command) > 0 {
+		cmd = strings.Join(in.Command, " ")
+	}
+	if cmd == "" {
+		s.writeError(w, http.StatusBadRequest, "exec requires cmd or command")
+		return
+	}
+	writeJSON(w, http.StatusOK, flaps.ExecResponse{
+		ExitCode: 0,
+		Stdout:   cmd + "\n",
+		Stderr:   "",
+	})
+}
+
+// psMachine handles GET .../ps. It returns a deterministic process list (a pid-1
+// init) — mudflaps runs no real processes.
+func (s *Server) psMachine(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.store.GetMachine(r.PathValue("app"), r.PathValue("id")); s.handleLookupError(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, []flaps.ProcessStat{
+		{Command: "/init", PID: 1, Directory: "/", CPU: 0, RSS: 0, Rtime: 0, Stime: 0, ListenSockets: []flaps.ListenSocket{}},
+	})
 }
 
 // transition sets a transient state and schedules the advance to rest. It

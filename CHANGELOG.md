@@ -6,6 +6,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-12
+
+### Added
+
+- `POST /v1/apps/{app}/machines/{id}/signal` — validates the signal name against
+  the Machines API enum (`400` on an invalid name); like stop, mudflaps does not
+  model real signal delivery.
+- `POST /v1/apps/{app}/machines/{id}/exec` — returns a deterministic
+  `ExecResponse` (exit 0, stdout echoes the command); mudflaps runs no real
+  command.
+- `GET /v1/apps/{app}/machines/{id}/ps` — returns a deterministic process list.
+
+This clears the roadmap: every documented Machines endpoint mudflaps targets is
+now implemented, so `/_mudflaps/health` reports an empty `unimplemented` list.
+
 ## [0.3.1] - 2026-07-12
 
 ### Fixed
