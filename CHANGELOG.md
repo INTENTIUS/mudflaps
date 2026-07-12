@@ -57,7 +57,7 @@ Fidelity and correctness pass from an adversarial audit against `superfly/fly-go
 - `/wait` honors fly-go's `version` filter and a repeatable `state` param (any
   requested state satisfies the wait); `instance_id` still accepted.
 - `cordoned` is surfaced on the machine object (`json:"cordoned"`).
-- `signal`, `exec`, and `ps` answer an honest `501` and appear in
+- `signal`, `exec`, and `ps` answer a plain `501` and appear in
   `/_mudflaps/health` instead of falling through to a bare `404`.
 - Response shapes match flaps: create-machine returns `200`, `start` returns a
   `MachineStartResponse`, and stop/restart/suspend/cordon/delete return an empty
