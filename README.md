@@ -2,6 +2,8 @@
 
 A standalone, stateful local emulator of the Fly.io Machines API (flaps). Like LocalStack, but for Fly Machines.
 
+mudflaps is the local target for [chant](https://intentius.io/chant)'s Fly lexicon — its `flyApply` applier deploys against mudflaps for offline, accountless runs. See the [chant docs](https://intentius.io/chant) and the [Fly deploy tutorial](https://intentius.io/chant/tutorials/fly-deploy-rollback/) it powers.
+
 [![CI](https://github.com/intentius/mudflaps/actions/workflows/ci.yml/badge.svg)](https://github.com/intentius/mudflaps/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/intentius/mudflaps.svg)](https://pkg.go.dev/github.com/intentius/mudflaps)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
