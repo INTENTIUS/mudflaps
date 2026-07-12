@@ -217,6 +217,10 @@ func (s *Server) createApp(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusBadRequest, "app_name is required")
 		return
 	}
+	if req.OrgSlug == "" {
+		s.writeError(w, http.StatusBadRequest, "authorization: request doesn't contain org_slug")
+		return
+	}
 	app, err := s.store.CreateApp(flaps.App{Name: req.AppName, Organization: req.OrgSlug})
 	if errors.Is(err, store.ErrAppExists) {
 		s.writeError(w, http.StatusConflict, "app already exists")

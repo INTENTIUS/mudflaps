@@ -66,7 +66,7 @@ func (h *harness) mustJSON(raw []byte, dst any) {
 // createStartedMachine creates an app+machine and drives it to started.
 func (h *harness) createStartedMachine(app string) flaps.Machine {
 	h.t.Helper()
-	if code, body := h.do(http.MethodPost, "/v1/apps", flaps.CreateAppRequest{AppName: app}, nil); code != http.StatusCreated {
+	if code, body := h.do(http.MethodPost, "/v1/apps", flaps.CreateAppRequest{AppName: app, OrgSlug: "personal"}, nil); code != http.StatusCreated {
 		h.t.Fatalf("create app: %d %s", code, body)
 	}
 	code, body := h.do(http.MethodPost, "/v1/apps/"+app+"/machines", flaps.CreateMachineRequest{
@@ -129,6 +129,19 @@ func TestCreateAndWaitStarted(t *testing.T) {
 	h.mustJSON(body, &got)
 	if got.State != flaps.StateStarted {
 		t.Fatalf("machine state = %q, want started", got.State)
+	}
+}
+
+// TestCreateAppRequiresOrgSlug mirrors real Fly, which rejects app creation
+// without an org_slug (400) rather than silently creating the app.
+func TestCreateAppRequiresOrgSlug(t *testing.T) {
+	h := newHarness(t)
+	code, body := h.do(http.MethodPost, "/v1/apps", flaps.CreateAppRequest{AppName: "x"}, nil)
+	if code != http.StatusBadRequest {
+		t.Fatalf("create app without org_slug = %d %s, want 400", code, body)
+	}
+	if !strings.Contains(string(body), "org_slug") {
+		t.Fatalf("error body = %s, want it to mention org_slug", body)
 	}
 }
 
@@ -460,7 +473,7 @@ func TestStopAcceptsDurationStringTimeout(t *testing.T) {
 // TestSkipLaunchRestsInCreated is the regression for audit M1.
 func TestSkipLaunchRestsInCreated(t *testing.T) {
 	h := newHarness(t)
-	if code, body := h.do(http.MethodPost, "/v1/apps", flaps.CreateAppRequest{AppName: "demo"}, nil); code != http.StatusCreated {
+	if code, body := h.do(http.MethodPost, "/v1/apps", flaps.CreateAppRequest{AppName: "demo", OrgSlug: "personal"}, nil); code != http.StatusCreated {
 		t.Fatalf("create app = %d %s", code, body)
 	}
 	code, body := h.do(http.MethodPost, "/v1/apps/demo/machines",
@@ -589,7 +602,7 @@ func TestDestroyAndWaitDestroyed(t *testing.T) {
 // multi-second real sleep.
 func TestWaitTimesOut(t *testing.T) {
 	h := newHarness(t)
-	if code, body := h.do(http.MethodPost, "/v1/apps", flaps.CreateAppRequest{AppName: "demo"}, nil); code != http.StatusCreated {
+	if code, body := h.do(http.MethodPost, "/v1/apps", flaps.CreateAppRequest{AppName: "demo", OrgSlug: "personal"}, nil); code != http.StatusCreated {
 		t.Fatalf("create app = %d %s", code, body)
 	}
 	// skip_launch leaves the machine in 'created', so it never reaches 'started'.
@@ -752,7 +765,7 @@ func TestDeleteAppWithLeasedMachine(t *testing.T) {
 // data has no description field.
 func TestResponseShapesMatchFlaps(t *testing.T) {
 	h := newHarness(t)
-	if code, body := h.do(http.MethodPost, "/v1/apps", flaps.CreateAppRequest{AppName: "demo"}, nil); code != http.StatusCreated {
+	if code, body := h.do(http.MethodPost, "/v1/apps", flaps.CreateAppRequest{AppName: "demo", OrgSlug: "personal"}, nil); code != http.StatusCreated {
 		t.Fatalf("create app = %d %s", code, body)
 	}
 	// create machine -> 200 (not 201)
@@ -822,7 +835,7 @@ func TestPlatformRegions(t *testing.T) {
 // TestVolumeCRUD covers the volume endpoints (breadth #18).
 func TestVolumeCRUD(t *testing.T) {
 	h := newHarness(t)
-	if code, body := h.do(http.MethodPost, "/v1/apps", flaps.CreateAppRequest{AppName: "demo"}, nil); code != http.StatusCreated {
+	if code, body := h.do(http.MethodPost, "/v1/apps", flaps.CreateAppRequest{AppName: "demo", OrgSlug: "personal"}, nil); code != http.StatusCreated {
 		t.Fatalf("create app = %d %s", code, body)
 	}
 	// empty list, not 501
@@ -876,7 +889,7 @@ func TestVolumeCRUD(t *testing.T) {
 // delete, and the invariant that a value is never returned.
 func TestSecretsApplyOnly(t *testing.T) {
 	h := newHarness(t)
-	if code, body := h.do(http.MethodPost, "/v1/apps", flaps.CreateAppRequest{AppName: "demo"}, nil); code != http.StatusCreated {
+	if code, body := h.do(http.MethodPost, "/v1/apps", flaps.CreateAppRequest{AppName: "demo", OrgSlug: "personal"}, nil); code != http.StatusCreated {
 		t.Fatalf("create app = %d %s", code, body)
 	}
 	// set
@@ -919,7 +932,7 @@ func TestSecretsApplyOnly(t *testing.T) {
 // TestIPAssignments covers the ip_assignments endpoints (breadth #21).
 func TestIPAssignments(t *testing.T) {
 	h := newHarness(t)
-	if code, body := h.do(http.MethodPost, "/v1/apps", flaps.CreateAppRequest{AppName: "demo"}, nil); code != http.StatusCreated {
+	if code, body := h.do(http.MethodPost, "/v1/apps", flaps.CreateAppRequest{AppName: "demo", OrgSlug: "personal"}, nil); code != http.StatusCreated {
 		t.Fatalf("create app = %d %s", code, body)
 	}
 	// shared v4
@@ -957,7 +970,7 @@ func TestIPAssignments(t *testing.T) {
 // TestCertificates covers the certificate endpoints (breadth #20).
 func TestCertificates(t *testing.T) {
 	h := newHarness(t)
-	if code, body := h.do(http.MethodPost, "/v1/apps", flaps.CreateAppRequest{AppName: "demo"}, nil); code != http.StatusCreated {
+	if code, body := h.do(http.MethodPost, "/v1/apps", flaps.CreateAppRequest{AppName: "demo", OrgSlug: "personal"}, nil); code != http.StatusCreated {
 		t.Fatalf("create app = %d %s", code, body)
 	}
 	// create

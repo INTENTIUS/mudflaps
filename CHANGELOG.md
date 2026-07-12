@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-12
+
+### Fixed
+
+- `POST /v1/apps` now requires `org_slug`, returning `400` to match real Fly,
+  which rejects app creation without it; the emulator was previously too lenient
+  and accepted the request, letting a plan that would fail against Fly pass
+  offline.
+
 ## [0.3.0] - 2026-07-11
 
 Breadth: the full app-resource surface (volumes, secrets, IPs, certificates) plus
@@ -87,7 +96,8 @@ Fidelity and correctness pass from an adversarial audit against `superfly/fly-go
 - Distroless container image, GoReleaser configuration, mkdocs-material doc site,
   and CI.
 
-[Unreleased]: https://github.com/intentius/mudflaps/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/intentius/mudflaps/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/intentius/mudflaps/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/intentius/mudflaps/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/intentius/mudflaps/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/intentius/mudflaps/releases/tag/v0.1.0
