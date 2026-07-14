@@ -205,6 +205,11 @@ func cloneMachine(m *flaps.Machine) *flaps.Machine {
 			}
 			cfg.Services = svcs
 		}
+		if m.Config.Mounts != nil {
+			mounts := make([]flaps.MachineMount, len(m.Config.Mounts))
+			copy(mounts, m.Config.Mounts)
+			cfg.Mounts = mounts
+		}
 		c.Config = &cfg
 	}
 	if m.ImageRef != nil {

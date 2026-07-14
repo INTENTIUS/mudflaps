@@ -169,3 +169,35 @@ func TestClonedMachinePortsAreIsolated(t *testing.T) {
 		t.Fatalf("clone aliased stored handlers: got %q, want tls", got)
 	}
 }
+
+func TestMachineMountsRoundTrip(t *testing.T) {
+	s := New()
+	if _, err := s.CreateApp(flaps.App{Name: "demo"}); err != nil {
+		t.Fatalf("CreateApp: %v", err)
+	}
+	m := flaps.Machine{
+		ID:     "m1",
+		State:  flaps.StateCreating,
+		Config: &flaps.MachineConfig{Image: "nginx", Mounts: []flaps.MachineMount{{Volume: "data", Path: "/data"}}},
+	}
+	if _, err := s.CreateMachine("demo", m); err != nil {
+		t.Fatalf("CreateMachine: %v", err)
+	}
+
+	// The mount survives create → GET, so a mounting machine reconciles to a
+	// no-op instead of looking drifted every apply (the bug this fixes).
+	got, err := s.GetMachine("demo", "m1")
+	if err != nil {
+		t.Fatalf("GetMachine: %v", err)
+	}
+	if len(got.Config.Mounts) != 1 || got.Config.Mounts[0].Volume != "data" || got.Config.Mounts[0].Path != "/data" {
+		t.Fatalf("mounts not persisted: %+v", got.Config.Mounts)
+	}
+
+	// Clone isolation: mutating a returned clone must not affect stored state.
+	got.Config.Mounts[0].Path = "MUTATED"
+	again, _ := s.GetMachine("demo", "m1")
+	if again.Config.Mounts[0].Path != "/data" {
+		t.Fatalf("clone aliased stored mounts: got %q, want /data", again.Config.Mounts[0].Path)
+	}
+}

@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-07-14
+
+### Fixed
+
+- Machine `config.mounts` is now persisted and echoed back. Previously
+  `MachineConfig` had no `mounts` field, so a create body's mounts were dropped
+  on unmarshal and `GET .../machines` returned `config.mounts: null` — making a
+  mounting machine look drifted on every reconcile (it never no-op'd). The field
+  now mirrors fly-go's `MachineMount` and round-trips through create → GET
+  (INTENTIUS/chant#868, #59).
+
 ## [0.4.0] - 2026-07-12
 
 ### Added
@@ -111,7 +122,9 @@ Fidelity and correctness pass from an adversarial audit against `superfly/fly-go
 - Distroless container image, GoReleaser configuration, mkdocs-material doc site,
   and CI.
 
-[Unreleased]: https://github.com/intentius/mudflaps/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/intentius/mudflaps/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/intentius/mudflaps/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/intentius/mudflaps/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/intentius/mudflaps/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/intentius/mudflaps/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/intentius/mudflaps/compare/v0.1.0...v0.2.0
