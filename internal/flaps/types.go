@@ -85,6 +85,22 @@ type MachineConfig struct {
 	Guest    *MachineGuest     `json:"guest,omitempty"`
 	Services []Service         `json:"services,omitempty"`
 	Restart  *Restart          `json:"restart,omitempty"`
+	Mounts   []MachineMount    `json:"mounts,omitempty"`
+}
+
+// MachineMount attaches a volume to a machine at a path. Field names mirror
+// fly-go's MachineMount so a create body round-trips through GET unchanged —
+// without this, mounts would be dropped on unmarshal and a mounting machine
+// would look drifted on every reconcile.
+type MachineMount struct {
+	Volume                 string `json:"volume,omitempty"`
+	Path                   string `json:"path,omitempty"`
+	Name                   string `json:"name,omitempty"`
+	Encrypted              bool   `json:"encrypted,omitempty"`
+	SizeGb                 int    `json:"size_gb,omitempty"`
+	SizeGbLimit            int    `json:"size_gb_limit,omitempty"`
+	AddSizeGb              int    `json:"add_size_gb,omitempty"`
+	ExtendThresholdPercent int    `json:"extend_threshold_percent,omitempty"`
 }
 
 // MachineGuest is the resource allocation for a machine.
