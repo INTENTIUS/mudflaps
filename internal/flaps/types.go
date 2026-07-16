@@ -12,6 +12,8 @@
 // so on) must match the real wire format exactly.
 package flaps
 
+import "strings"
+
 // MachineState is the lifecycle state of a machine. Fly models three groups of
 // states: persistent resting states, transient in-flight states, and terminal
 // states a machine never leaves.
@@ -25,6 +27,33 @@ const (
 	StateSuspended MachineState = "suspended"
 	StateFailed    MachineState = "failed"
 )
+
+// UnpullableImage is a sentinel image reference. A machine whose config.image is
+// this value (with or without a `:tag` or `@digest`) never reaches `started`:
+// its boot transition settles into StateFailed instead, modeling a machine that
+// flaps accepted but that could not pull its image at boot ("Unable to pull
+// image, not found, canceling deploy" — a common real-world deploy failure).
+//
+// Real flaps has no such magic value; mudflaps models the Machines-API *state*
+// layer, not an image registry, so a boot-time pull failure can't arise on its
+// own. This sentinel is the injection point that lets a Machines-API client
+// (e.g. an IaC applier that polls .../wait for `started`) exercise its
+// deploy-failure path offline and deterministically. See issue #61.
+const UnpullableImage = "mudflaps/unpullable"
+
+// FailsToBoot reports whether a machine with this config should settle into
+// StateFailed rather than StateStarted on its next boot transition — i.e. its
+// image is the UnpullableImage sentinel (bare, or with a `:tag`/`@digest`).
+// Safe on a nil receiver.
+func (c *MachineConfig) FailsToBoot() bool {
+	if c == nil {
+		return false
+	}
+	img := c.Image
+	return img == UnpullableImage ||
+		strings.HasPrefix(img, UnpullableImage+":") ||
+		strings.HasPrefix(img, UnpullableImage+"@")
+}
 
 // Transient states: a machine passes through these while an operation runs.
 const (

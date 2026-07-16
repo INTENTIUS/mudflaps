@@ -6,6 +6,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-16
+
+### Added
+
+- Deploy-failure injection: a machine whose `config.image` is the sentinel
+  `mudflaps/unpullable` (bare, or with a `:tag`/`@digest`) settles into `failed`
+  instead of `started` on its next boot transition (create/start/restart/update),
+  modeling a boot-time image-pull failure ("unable to pull image, not found,
+  canceling deploy"). A client that waits for `started` sees a deploy that never
+  comes up — `.../wait?state=started` times out (`408`, never a false `started`)
+  and `GET .../machines/{id}` reports `state: failed`. The decision is read from
+  the machine's latest config when the boot transition fires, so an update back
+  to a real image before then still boots. This is the single injection point
+  that lets a Machines-API client (e.g. an IaC applier) exercise its
+  deploy-failure/cancel path offline and deterministically — real flaps has no
+  such magic image (#61).
+
 ## [0.4.1] - 2026-07-14
 
 ### Fixed
@@ -122,7 +139,8 @@ Fidelity and correctness pass from an adversarial audit against `superfly/fly-go
 - Distroless container image, GoReleaser configuration, mkdocs-material doc site,
   and CI.
 
-[Unreleased]: https://github.com/intentius/mudflaps/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/intentius/mudflaps/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/intentius/mudflaps/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/intentius/mudflaps/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/intentius/mudflaps/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/intentius/mudflaps/compare/v0.3.0...v0.3.1

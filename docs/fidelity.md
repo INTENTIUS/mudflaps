@@ -16,6 +16,7 @@ stateDiagram-v2
     [*] --> created: POST machines (skip_launch)
     creating --> starting
     starting --> started
+    starting --> failed: unpullable image
     started --> stopping: POST stop
     stopping --> stopped
     stopped --> starting: POST start
@@ -33,7 +34,8 @@ stateDiagram-v2
 
 The states the emulator actually enters fall into three groups:
 
-- Resting: `created`, `started`, `stopped`, `suspended`.
+- Resting: `created`, `started`, `stopped`, `suspended`, and `failed` (see
+  [Deploy-failure injection](#deploy-failure-injection)).
 - Transient: `creating`, `starting`, `stopping`, `restarting`, `suspending`,
   `replacing`, `destroying`.
 - Terminal: `destroyed` (a destroyed machine is reaped from the store), and
@@ -42,6 +44,28 @@ The states the emulator actually enters fall into three groups:
 A `skip_launch` create rests directly at `created` rather than booting. A
 destroyed machine is removed, so a subsequent operation returns `404` rather
 than resurrecting it.
+
+## Deploy-failure injection
+
+Real deploys don't always succeed: a machine flaps accepts can still fail to
+pull its image at boot ("unable to pull image, not found, canceling deploy") and
+never reach `started`. mudflaps models the Machines-API state layer, not an image
+registry, so that failure can't arise on its own — but a client's deploy-failure
+handling still needs testing.
+
+A machine whose `config.image` is the sentinel **`mudflaps/unpullable`** (bare,
+or with a `:tag`/`@digest`) settles into `failed` instead of `started` on its
+next boot transition — create, start, restart, or an update to that image. The
+decision is read from the machine's latest config at the moment the boot
+transition fires, so an update back to a real image before then still boots
+normally.
+
+For a client that polls `.../wait?state=started`, this is a deploy that never
+comes up: the wait returns `408` (it never falsely reports `started`), and a
+`GET` of the machine shows `state: failed`. Everything stays deterministic on the
+injected clock. Real flaps has no such magic image; the sentinel is the single
+injection point that lets an applier exercise its failure/cancel/rollback path
+offline.
 
 ## Leases and nonces
 
