@@ -57,21 +57,24 @@ func NewAdvancer(s *store.Store, clk clock.Clock, delays Delays, log *slog.Logge
 	return &Advancer{store: s, clk: clk, delays: delays, log: log}
 }
 
-// Create moves a freshly created machine creating -> starting -> started.
+// Create moves a freshly created machine creating -> starting -> started (or,
+// for a machine whose image can't be pulled, creating -> starting -> failed;
+// see settle).
 func (a *Advancer) Create(app, machineID string) {
 	a.clk.AfterFunc(a.delays.Create, func() {
 		a.set(app, machineID, flaps.StateStarting)
 		a.clk.AfterFunc(a.delays.Start, func() {
-			a.set(app, machineID, flaps.StateStarted)
+			a.settle(app, machineID)
 		})
 	})
 }
 
-// Start moves a stopped machine starting -> started. The transient state is set
-// by the caller (the server) before scheduling.
+// Start moves a stopped machine starting -> started (or -> failed for an
+// unpullable image). The transient state is set by the caller (the server)
+// before scheduling.
 func (a *Advancer) Start(app, machineID string) {
 	a.clk.AfterFunc(a.delays.Start, func() {
-		a.set(app, machineID, flaps.StateStarted)
+		a.settle(app, machineID)
 	})
 }
 
@@ -82,10 +85,11 @@ func (a *Advancer) Stop(app, machineID string) {
 	})
 }
 
-// Restart moves a machine restarting -> started.
+// Restart moves a machine restarting -> started (or -> failed for an unpullable
+// image).
 func (a *Advancer) Restart(app, machineID string) {
 	a.clk.AfterFunc(a.delays.Restart, func() {
-		a.set(app, machineID, flaps.StateStarted)
+		a.settle(app, machineID)
 	})
 }
 
@@ -114,8 +118,32 @@ func (a *Advancer) Destroy(app, machineID string) {
 // new version replacing -> started.
 func (a *Advancer) Update(app, machineID string) {
 	a.clk.AfterFunc(a.delays.Update, func() {
-		a.set(app, machineID, flaps.StateStarted)
+		a.settle(app, machineID)
 	})
+}
+
+// settle drives a booting machine to its resting state: StateStarted normally,
+// or StateFailed when its config marks it unpullable (see
+// flaps.MachineConfig.FailsToBoot). This is the one place a machine can end in
+// `failed` — modeling a boot-time image-pull failure so a client that waits for
+// `started` observes a deploy that never comes up (issue #61). Reading the
+// config inside the same mutation keeps the decision consistent with the very
+// latest update (an update to a good image before this fires still boots).
+func (a *Advancer) settle(app, machineID string) {
+	_, err := a.store.UpdateMachine(app, machineID, func(m *flaps.Machine) error {
+		state := flaps.StateStarted
+		if m.Config.FailsToBoot() {
+			state = flaps.StateFailed
+		}
+		m.State = state
+		if n := len(m.Versions); n > 0 {
+			m.Versions[n-1].State = state
+		}
+		return nil
+	})
+	if err != nil {
+		a.log.Debug("settle skipped", "app", app, "machine", machineID, "err", err)
+	}
 }
 
 // set writes a resting or terminal state onto a machine, keeping the current

@@ -23,6 +23,7 @@ Testing a Machines-API client, such as an infrastructure-as-code applier, requir
 - Suspend/resume, cordon/uncordon, and machine metadata endpoints.
 - Machine leases with nonce, TTL, owner, and expiry; a mutation by a non-holder returns `409`, and a conflicting acquire returns the holder's lease envelope (without the nonce).
 - Synchronous version churn: an update mints a new `instance_id`, marks the prior version `replaced`, and returns the new version in the response.
+- Deploy-failure injection: a machine whose `config.image` is the sentinel `mudflaps/unpullable` settles into `failed` instead of `started`, modeling a boot-time image-pull failure ("unable to pull image, canceling deploy"). A client that waits for `started` observes a deploy that never comes up — its failure path, tested offline.
 - `/wait` long-poll that blocks until a target state or returns `408`; the deadline is measured on the injected clock, so timeouts are deterministic in tests.
 - A `/_mudflaps/health` endpoint that reports the implemented paths; the roadmap is currently empty — every documented endpoint mudflaps targets is built.
 - Single static binary and distroless container image; no runtime dependencies.

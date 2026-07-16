@@ -92,6 +92,97 @@ func TestCreateReachesStartedInOneAdvance(t *testing.T) {
 	}
 }
 
+// seedImage seeds a creating machine whose config carries the given image, so
+// the boot transition can consult it (see settle / FailsToBoot).
+func seedImage(t *testing.T, s *store.Store, image string) {
+	t.Helper()
+	m := flaps.Machine{
+		ID:         "m1",
+		State:      flaps.StateCreating,
+		InstanceID: "INSTANCE0",
+		Config:     &flaps.MachineConfig{Image: image},
+		Versions:   []flaps.MachineVersion{{InstanceID: "INSTANCE0", State: flaps.StateCreating}},
+	}
+	if _, err := s.CreateMachine("demo", m); err != nil {
+		t.Fatalf("CreateMachine: %v", err)
+	}
+}
+
+// #61 — a machine whose image can't be pulled settles into `failed`, not
+// `started`: the boot transition consults the config sentinel.
+func TestCreateReachesFailedForUnpullableImage(t *testing.T) {
+	s, clk, a := newFixture(t)
+	seedImage(t, s, flaps.UnpullableImage)
+
+	a.Create("demo", "m1")
+
+	// creating -> starting (the boot is still pending).
+	clk.Advance(time.Second)
+	if got := stateOf(t, s); got != flaps.StateStarting {
+		t.Fatalf("after first step state = %q, want starting", got)
+	}
+
+	// starting -> failed (not started).
+	clk.Advance(time.Second)
+	if got := stateOf(t, s); got != flaps.StateFailed {
+		t.Fatalf("after boot state = %q, want failed", got)
+	}
+
+	// The version history tracks the terminal state too.
+	m, err := s.GetMachine("demo", "m1")
+	if err != nil {
+		t.Fatalf("GetMachine: %v", err)
+	}
+	if n := len(m.Versions); n == 0 || m.Versions[n-1].State != flaps.StateFailed {
+		t.Fatalf("version state = %v, want failed", m.Versions)
+	}
+}
+
+func TestUnpullableImageMatchesTagAndDigest(t *testing.T) {
+	for _, img := range []string{
+		flaps.UnpullableImage,
+		flaps.UnpullableImage + ":latest",
+		flaps.UnpullableImage + "@sha256:deadbeef",
+	} {
+		if !(&flaps.MachineConfig{Image: img}).FailsToBoot() {
+			t.Fatalf("FailsToBoot(%q) = false, want true", img)
+		}
+	}
+	for _, img := range []string{"nginx:1", flaps.UnpullableImage + "-not", "", "mudflaps/unpullableX"} {
+		if (&flaps.MachineConfig{Image: img}).FailsToBoot() {
+			t.Fatalf("FailsToBoot(%q) = true, want false", img)
+		}
+	}
+	// nil config never fails to boot.
+	var c *flaps.MachineConfig
+	if c.FailsToBoot() {
+		t.Fatal("nil config FailsToBoot() = true, want false")
+	}
+}
+
+// An update to a good image before the boot fires still reaches `started`:
+// settle reads the latest config, so a recovering update wins.
+func TestUpdateToGoodImageRecoversFromUnpullable(t *testing.T) {
+	s, clk, a := newFixture(t)
+	seedImage(t, s, flaps.UnpullableImage)
+
+	a.Create("demo", "m1")
+	clk.Advance(time.Second) // creating -> starting
+
+	// Client fixes the image before the boot transition fires.
+	if _, err := s.UpdateMachine("demo", "m1", func(m *flaps.Machine) error {
+		m.Config.Image = "nginx:1"
+		return nil
+	}); err != nil {
+		t.Fatalf("UpdateMachine: %v", err)
+	}
+
+	clk.Advance(time.Second) // starting -> started (image is good now)
+	if got := stateOf(t, s); got != flaps.StateStarted {
+		t.Fatalf("state = %q, want started", got)
+	}
+}
+
 func TestStopAndDestroy(t *testing.T) {
 	s, clk, a := newFixture(t)
 	seed(t, s)

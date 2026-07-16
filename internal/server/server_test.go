@@ -137,6 +137,60 @@ func TestCreateAndWaitStarted(t *testing.T) {
 	}
 }
 
+// TestUnpullableImageDeployFails is the #61 deploy-failure path: a machine
+// created with the UnpullableImage sentinel settles into `failed` (modeling a
+// boot-time image-pull failure), so a client that waits for `started` sees a
+// deploy that never comes up — mirroring the forum report this feature targets.
+func TestUnpullableImageDeployFails(t *testing.T) {
+	h := newHarness(t)
+	if code, body := h.do(http.MethodPost, "/v1/apps", flaps.CreateAppRequest{AppName: "demo", OrgSlug: "personal"}, nil); code != http.StatusCreated {
+		t.Fatalf("create app: %d %s", code, body)
+	}
+	code, body := h.do(http.MethodPost, "/v1/apps/demo/machines", flaps.CreateMachineRequest{
+		Config: &flaps.MachineConfig{Image: flaps.UnpullableImage},
+	}, nil)
+	if code != http.StatusOK {
+		t.Fatalf("create machine: %d %s", code, body)
+	}
+	var m flaps.Machine
+	h.mustJSON(body, &m)
+
+	h.clk.Advance(time.Hour) // fire creating -> starting -> failed
+
+	// The machine is observable as failed (how a client learns the deploy died).
+	code, body = h.do(http.MethodGet, "/v1/apps/demo/machines/"+m.ID, nil, nil)
+	if code != http.StatusOK {
+		t.Fatalf("get machine = %d %s", code, body)
+	}
+	var got flaps.Machine
+	h.mustJSON(body, &got)
+	if got.State != flaps.StateFailed {
+		t.Fatalf("machine state = %q, want failed", got.State)
+	}
+
+	// A wait for `started` never falsely reports success — it times out (408).
+	done := make(chan int, 1)
+	go func() {
+		c, _ := h.do(http.MethodGet, "/v1/apps/demo/machines/"+m.ID+"/wait?state=started&timeout=1", nil, nil)
+		done <- c
+	}()
+	safety := time.After(3 * time.Second)
+	for {
+		select {
+		case c := <-done:
+			if c != http.StatusRequestTimeout {
+				t.Fatalf("wait-for-started on a failed machine = %d, want 408", c)
+			}
+			return
+		case <-safety:
+			t.Fatal("wait-for-started on a failed machine did not time out")
+		default:
+			h.clk.Advance(500 * time.Millisecond)
+			time.Sleep(2 * time.Millisecond)
+		}
+	}
+}
+
 // TestCreateAppRequiresOrgSlug mirrors real Fly, which rejects app creation
 // without an org_slug (400) rather than silently creating the app.
 func TestCreateAppRequiresOrgSlug(t *testing.T) {
