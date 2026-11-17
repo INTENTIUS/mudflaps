@@ -43,7 +43,8 @@ docs-build:
 docs-serve:
 	mkdocs serve
 
-# Cut a release: preflight, then tag and push vV. Usage: make release V=0.2.0
+# Start a release: preflight, then dispatch the Release workflow, where chant
+# cuts and publishes vV. Usage: make release V=0.6.0
 # (`just release 0.2.0` is the primary path; see RELEASING.md.)
 release:
 	@test -n "$(V)" || { echo "usage: make release V=X.Y.Z"; exit 1; }
@@ -52,5 +53,4 @@ release:
 	git pull --ff-only origin main
 	@grep -q "## \[$(V)\]" CHANGELOG.md || { echo "CHANGELOG.md has no '## [$(V)]' section"; exit 1; }
 	go build ./... && go vet ./... && test -z "$$(gofmt -l .)" && go test ./...
-	git tag -a "v$(V)" -m "mudflaps v$(V)"
-	git push origin "v$(V)"
+	gh workflow run release.yml --repo INTENTIUS/mudflaps --ref main -f label=$(V)

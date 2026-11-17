@@ -1,0 +1,35 @@
+{
+  "release": {
+    "tag": "v{version}",
+    "legacyTags": ["v"],
+    "green": "forge-checks",
+    "images": [
+      {
+        "name": "mudflaps",
+        "build": "{ docker buildx inspect chant-release >/dev/null 2>&1 || docker buildx create --name chant-release --driver docker-container >/dev/null; } && mkdir -p out/images && docker buildx build --builder chant-release --no-cache --platform linux/amd64,linux/arm64 --provenance=false --sbom=false --build-arg SOURCE_DATE_EPOCH=\"$SOURCE_DATE_EPOCH\" --build-arg VERSION=\"$CHANT_RELEASE_LABEL\" --label org.opencontainers.image.source=https://github.com/intentius/mudflaps --label org.opencontainers.image.version=\"$CHANT_RELEASE_LABEL\" --label org.opencontainers.image.licenses=MIT --output type=oci,dest=out/images/mudflaps.tar,rewrite-timestamp=true -f Dockerfile . >&2",
+        "archive": "out/images/mudflaps.tar",
+        "platforms": ["linux/amd64", "linux/arm64"]
+      }
+    ],
+    "artifacts": [{ "name": "goreleaser", "goreleaser": {} }],
+    "publish": [
+      {
+        "type": "forge",
+        "forge": "github",
+        "repo": "INTENTIUS/mudflaps",
+        "assets": ["artifact:goreleaser"],
+        "notes": { "generate": "commits", "types": ["feat", "fix", "perf", "refactor", "revert", "build", "ci", "style"] }
+      },
+      {
+        "type": "oci",
+        "image": "out/images/mudflaps.tar",
+        "repository": "ghcr.io/intentius/mudflaps",
+        "tags": ["{label}", "latest"]
+      }
+    ],
+    "workflow": {
+      "trigger": "dispatch",
+      "file": ".github/workflows/release.yml"
+    }
+  }
+}

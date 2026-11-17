@@ -56,4 +56,4 @@ see [SECURITY.md](./SECURITY.md) instead of filing a public issue.
 
 ## Releasing
 
-Maintainers: see [RELEASING.md](./RELEASING.md). Releases are tag-driven — `just release X.Y.Z` from a clean `main`.
+Maintainers: see [RELEASING.md](./RELEASING.md). Releases go through `chant release`: `just release X.Y.Z` from a clean `main` starts the Release workflow, which cuts and tags the newest green commit.
