@@ -56,9 +56,10 @@ docs-build:
 docs-serve:
     mkdocs serve
 
-# Cut a release: preflight checks, then tag and push vVERSION (triggers the
-# Release workflow, which builds binaries + the GHCR image). Usage:
-#   just release 0.2.0
+# Start a release: preflight checks, then dispatch the Release workflow, where
+# `chant release` cuts the newest green commit of main as vVERSION and publishes
+# the archives, checksums and the GHCR image. Usage:
+#   just release 0.6.0
 # The CHANGELOG must already have a `## [VERSION]` section (see RELEASING.md).
 release version:
     #!/usr/bin/env bash
@@ -72,8 +73,7 @@ release version:
     go vet ./...
     [ -z "$(gofmt -l .)" ] || { echo "✗ gofmt reported files"; exit 1; }
     go test ./...
-    echo "→ tagging v{{version}}"
-    git tag -a "v{{version}}" -m "mudflaps v{{version}}"
-    git push origin "v{{version}}"
-    echo "✓ pushed v{{version}} — the Release workflow builds binaries + the GHCR image."
+    echo "→ dispatching the Release workflow for {{version}}"
+    gh workflow run release.yml --repo INTENTIUS/mudflaps --ref main -f label={{version}}
+    echo "✓ dispatched; chant cuts v{{version}} from the newest green commit of main and publishes it."
     echo "  watch: gh run watch --repo INTENTIUS/mudflaps"

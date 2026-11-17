@@ -1,4 +1,8 @@
 # GoReleaser configuration. See https://goreleaser.com
+#
+# `chant release cut` runs this in snapshot mode (goreleaser release --snapshot
+# --clean --skip=publish) and records the archives and checksums it writes; chant
+# publishes them and the container image (see chant.config.json and RELEASING.md).
 version: 2
 
 project_name: mudflaps
@@ -39,52 +43,10 @@ archives:
 checksum:
   name_template: checksums.txt
 
-dockers:
-  - image_templates:
-      - "ghcr.io/intentius/mudflaps:{{ .Version }}-amd64"
-    dockerfile: Dockerfile.goreleaser
-    use: buildx
-    goos: linux
-    goarch: amd64
-    build_flag_templates:
-      - "--platform=linux/amd64"
-      - "--build-arg=VERSION={{ .Version }}"
-      - "--label=org.opencontainers.image.source=https://github.com/intentius/mudflaps"
-      - "--label=org.opencontainers.image.version={{ .Version }}"
-      - "--label=org.opencontainers.image.licenses=MIT"
-  - image_templates:
-      - "ghcr.io/intentius/mudflaps:{{ .Version }}-arm64"
-    dockerfile: Dockerfile.goreleaser
-    use: buildx
-    goos: linux
-    goarch: arm64
-    build_flag_templates:
-      - "--platform=linux/arm64"
-      - "--build-arg=VERSION={{ .Version }}"
-      - "--label=org.opencontainers.image.source=https://github.com/intentius/mudflaps"
-      - "--label=org.opencontainers.image.version={{ .Version }}"
-      - "--label=org.opencontainers.image.licenses=MIT"
-
-docker_manifests:
-  - name_template: "ghcr.io/intentius/mudflaps:{{ .Version }}"
-    image_templates:
-      - "ghcr.io/intentius/mudflaps:{{ .Version }}-amd64"
-      - "ghcr.io/intentius/mudflaps:{{ .Version }}-arm64"
-  - name_template: "ghcr.io/intentius/mudflaps:latest"
-    image_templates:
-      - "ghcr.io/intentius/mudflaps:{{ .Version }}-amd64"
-      - "ghcr.io/intentius/mudflaps:{{ .Version }}-arm64"
-
-changelog:
-  use: github
-  sort: asc
-  filters:
-    exclude:
-      - "^docs:"
-      - "^test:"
-      - "^chore:"
-
 release:
   github:
     owner: intentius
     name: mudflaps
+
+snapshot:
+  version_template: "{{ .Env.CHANT_RELEASE_LABEL }}"
