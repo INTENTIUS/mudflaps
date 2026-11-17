@@ -8,7 +8,7 @@ picks the newest green commit of `main`, cuts it as `vX.Y.Z`, and publishes:
   windows on amd64 and arm64 (`.tar.gz`, `.zip` on windows) and `checksums.txt`,
   with notes generated from the conventional commits since the previous release;
 - the multi-arch (linux/amd64, linux/arm64) container image
-  `ghcr.io/intentius/mudflaps:X.Y.Z`, with `latest` moved to it.
+  `ghcr.io/intentius/mudflaps:X.Y.Z`, with `latest` moved to it and `X.Y.Z-amd64` and `X.Y.Z-arm64` for each platform.
 
 The release is configured in [`chant.config.json`](chant.config.json). The cut
 runs GoReleaser in snapshot mode (`.goreleaser.yaml`) for the binaries, archives
@@ -20,7 +20,7 @@ read as the release history.
 `release.yml` is generated: change `chant.config.json`, then regenerate it with
 
 ```sh
-npx --yes @intentius/chant@0.124.103 release workflow
+npx --yes @intentius/chant@0.124.104 release workflow --force
 ```
 
 ## Steps
@@ -32,7 +32,7 @@ npx --yes @intentius/chant@0.124.103 release workflow
 2. **Check the label** (optional). From a clean, up-to-date `main`:
 
    ```sh
-   npx --yes @intentius/chant@0.124.103 release next     # the label the commits give
+   npx --yes @intentius/chant@0.124.104 release next     # the label the commits give
    ```
 
 3. **Start the release:**

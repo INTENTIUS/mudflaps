@@ -25,5 +25,5 @@ go.work.sum
 # mkdocs build output
 /site/
 
-# chant release: container image archives the cut builds
-/out/
+# chant release: container image archives the cut builds (build/images)
+/build/
