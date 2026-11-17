@@ -1,13 +1,17 @@
 {
   "release": {
     "tag": "v{version}",
-    "legacyTags": ["v"],
+    "legacyTags": [
+      "v"
+    ],
     "green": "forge-checks",
     "images": [
       {
         "name": "mudflaps",
         "dockerfile": "Dockerfile",
-        "args": { "VERSION": "{version}" },
+        "args": {
+          "VERSION": "{version}"
+        },
         "labels": {
           "org.opencontainers.image.source": "https://github.com/intentius/mudflaps",
           "org.opencontainers.image.version": "{version}",
@@ -15,26 +19,46 @@
         }
       }
     ],
-    "artifacts": [{ "name": "goreleaser", "goreleaser": {} }],
+    "artifacts": [
+      {
+        "name": "goreleaser",
+        "goreleaser": {}
+      }
+    ],
     "publish": [
       {
         "type": "forge",
         "forge": "github",
         "repo": "INTENTIUS/mudflaps",
-        "assets": ["artifact:goreleaser"],
-        "notes": { "generate": "commits", "exclude": ["docs", "test", "chore"] }
+        "assets": [
+          "artifact:goreleaser"
+        ],
+        "notes": {
+          "generate": "commits",
+          "exclude": [
+            "docs",
+            "test",
+            "chore"
+          ]
+        }
       },
       {
         "type": "oci",
         "image": "build/images/mudflaps.tar",
         "repository": "ghcr.io/intentius/mudflaps",
-        "tags": ["{label}", "latest"],
-        "platformTags": ["{version}-{arch}"]
+        "tags": [
+          "{label}",
+          "latest"
+        ],
+        "platformTags": [
+          "{version}-{arch}"
+        ]
       }
     ],
     "workflow": {
       "trigger": "dispatch",
-      "file": ".github/workflows/release.yml"
+      "file": ".github/workflows/release.yml",
+      "doctor": false
     }
   }
 }
