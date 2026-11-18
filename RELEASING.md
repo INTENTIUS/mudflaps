@@ -1,7 +1,7 @@
 # Releasing
 
 mudflaps releases with [`chant release`](https://intentius.io/chant/cli/release/).
-A release is started by hand: the [Release workflow](.github/workflows/release.yml)
+A release is started by hand: the [Release workflow](.github/workflows/publish.yml)
 picks the newest green commit of `main`, cuts it as `vX.Y.Z`, and publishes:
 
 - a GitHub Release `vX.Y.Z` with the GoReleaser archives for linux, darwin and
@@ -17,10 +17,10 @@ file by digest, and pushes the tag. The publish job then uploads exactly those
 files and that image. Tags stay `vX.Y.Z`; the `v*` tags from before chant are
 read as the release history.
 
-`release.yml` is generated: change `chant.config.json`, then regenerate it with
+`publish.yml` is generated: change `chant.config.json`, then regenerate it with
 
 ```sh
-npx --yes @intentius/chant@0.124.105 release workflow --force
+npx --yes @intentius/chant@0.124.107 release workflow --force
 ```
 
 ## Steps
@@ -32,7 +32,7 @@ npx --yes @intentius/chant@0.124.105 release workflow --force
 2. **Check the label** (optional). From a clean, up-to-date `main`:
 
    ```sh
-   npx --yes @intentius/chant@0.124.105 release next     # the label the commits give
+   npx --yes @intentius/chant@0.124.107 release next     # the label the commits give
    ```
 
 3. **Start the release:**
@@ -44,7 +44,7 @@ npx --yes @intentius/chant@0.124.105 release workflow --force
    The recipe refuses to proceed unless the working tree is clean, you are on
    `main`, the changelog has a `## [X.Y.Z]` section, and `build`/`vet`/`gofmt`/
    `test` all pass. It then dispatches the Release workflow with the label
-   `X.Y.Z`. `gh workflow run release.yml -f label=auto` takes the label from the
+   `X.Y.Z`. `gh workflow run publish.yml -f label=auto` takes the label from the
    commits instead.
 
 4. **Watch the release build:**
