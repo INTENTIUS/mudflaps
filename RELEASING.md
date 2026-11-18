@@ -20,7 +20,7 @@ read as the release history.
 `release.yml` is generated: change `chant.config.json`, then regenerate it with
 
 ```sh
-npx --yes @intentius/chant@0.124.104 release workflow --force
+npx --yes @intentius/chant@0.124.105 release workflow --force
 ```
 
 ## Steps
@@ -32,7 +32,7 @@ npx --yes @intentius/chant@0.124.104 release workflow --force
 2. **Check the label** (optional). From a clean, up-to-date `main`:
 
    ```sh
-   npx --yes @intentius/chant@0.124.104 release next     # the label the commits give
+   npx --yes @intentius/chant@0.124.105 release next     # the label the commits give
    ```
 
 3. **Start the release:**
