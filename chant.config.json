@@ -57,8 +57,7 @@
     ],
     "workflow": {
       "trigger": "dispatch",
-      "file": ".github/workflows/release.yml",
-      "doctor": false
+      "file": ".github/workflows/release.yml"
     }
   }
 }
