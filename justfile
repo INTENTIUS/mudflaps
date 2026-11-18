@@ -74,6 +74,6 @@ release version:
     [ -z "$(gofmt -l .)" ] || { echo "✗ gofmt reported files"; exit 1; }
     go test ./...
     echo "→ dispatching the Release workflow for {{version}}"
-    gh workflow run release.yml --repo INTENTIUS/mudflaps --ref main -f label={{version}}
+    gh workflow run publish.yml --repo INTENTIUS/mudflaps --ref main -f label={{version}}
     echo "✓ dispatched; chant cuts v{{version}} from the newest green commit of main and publishes it."
     echo "  watch: gh run watch --repo INTENTIUS/mudflaps"
